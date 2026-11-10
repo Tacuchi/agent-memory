@@ -13,7 +13,7 @@ import type { Filtros } from "../store/filters.js";
 import type { MemoryStore, Umbrales } from "../store/store.js";
 import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "./views.js";
 
-// Operaciones de la memoria expuestas por el servicio (T3.2). Las reglas viven una sola vez: aquí
+// Operaciones de la memoria expuestas por el servicio. Las reglas viven una sola vez: aquí
 // y en el almacén. MCP, CLI y web solo traducen a estas operaciones.
 
 const id = z.number().int().positive();
@@ -90,11 +90,11 @@ export const OPERACIONES = Object.keys(ESQUEMAS) as Operacion[];
 const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito", "fusionar", "confirmar_vigencia"]);
 
 export interface OpcionesApi {
-  /** Patrones de repos excluidos (AC-20), o cómo leerlos en cada petición; por defecto, ninguno. */
+  /** Patrones de repos excluidos, o cómo leerlos en cada petición; por defecto, ninguno. */
   exclusion?: Exclusion | (() => Exclusion);
   /** Tope del índice de inicio cuando el cliente no manda uno. */
   topeIndice?: number;
-  /** Umbrales en días de la vista de revisión (AC-25). */
+  /** Umbrales en días de la vista de revisión. */
   umbralesRevision?: Umbrales;
   /** Carpeta donde caen las exportaciones pedidas desde la web; por defecto, ninguna (hay que dar destino). */
   dirExportaciones?: string;
@@ -132,7 +132,7 @@ export class Api {
   }
 
   /**
-   * Toda operación del agente acepta el contexto del cliente: si es un repo excluido (AC-20), no se
+   * Toda operación del agente acepta el contexto del cliente: si es un repo excluido, no se
    * guarda ni se devuelve nada. Las operaciones que no lo usan lo reciben solo para este control.
    */
   private sinContextoAjeno(op: Operacion, cuerpo: unknown, actor: Actor): unknown {
@@ -177,7 +177,7 @@ export class Api {
 
   private async crear(d: z.infer<typeof ESQUEMAS.crear>, actor: Actor) {
     const tipo = validarTipo(d.tipo);
-    const { ambito, ambitoRef } = resolverAmbito(d.ambito, d.contexto ?? { repo: null, proyecto: null });
+    const { ambito, ambitoRef } = resolverAmbito(d.ambito, d.contexto ?? { repo: null, proyecto: null }, tipo);
     const titulo = this.store.redactarTexto(validarTexto("titulo", d.titulo));
     const contenido = this.store.redactarTexto(validarTexto("contenido", d.contenido));
     const redactados = [...new Set([...titulo.redactados, ...contenido.redactados])];
@@ -274,7 +274,7 @@ export class Api {
   }
 
   /**
-   * Exportación a markdown (AC-22). La CLI elige la carpeta destino (absoluta, nueva o vacía); la
+   * Exportación a markdown. La CLI elige la carpeta destino (absoluta, nueva o vacía); la
    * web no elige rutas: cae en una carpeta nueva con fecha bajo la de exportaciones.
    */
   private exportar(d: z.infer<typeof ESQUEMAS.exportar>, actor: Actor) {
@@ -309,7 +309,7 @@ export class Api {
     return { entrada: { ...vistaEntrada(e), verificada_en: e.verificadaEn } };
   }
 
-  /** Sin huella, la entrada no cuenta como confirmada; una huella distinta se rechaza (AC-16). */
+  /** Sin huella, la entrada no cuenta como confirmada; una huella distinta se rechaza. */
   private verificarHuella(recibida: string | undefined, canonico: Record<string, string | number | null>): boolean {
     if (recibida === undefined) return false;
     if (recibida !== huella(canonico)) {
@@ -322,8 +322,8 @@ export class Api {
   }
 }
 
-function resolverAmbito(ambito: Ambito | undefined, ctx: Contexto): { ambito: Ambito; ambitoRef: string | null } {
-  if (!ambito) return ambitoPorDefecto(ctx);
+function resolverAmbito(ambito: Ambito | undefined, ctx: Contexto, tipo: string): { ambito: Ambito; ambitoRef: string | null } {
+  if (!ambito) return ambitoPorDefecto(ctx, tipo);
   if (ambito === "global") return { ambito, ambitoRef: null };
   const ref = ambito === "repo" ? ctx.repo : ctx.proyecto;
   if (!ref) throw new ReglaError("ambito_sin_contexto", `no hay un ${ambito} en el directorio de trabajo para el ámbito «${ambito}»`);

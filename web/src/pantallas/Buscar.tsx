@@ -13,7 +13,7 @@ interface Filtros {
 
 const INICIALES: Filtros = { ambito: "", tipo: "", validacion: ["validada", "pendiente"], reemplazadas: false, vencidas: false };
 
-/** Búsqueda con filtros de ámbito, tipo y estado (AC-10). Sin consulta, lista lo más reciente. */
+/** Búsqueda con filtros de ámbito, tipo y estado. Sin consulta, lista lo más reciente. */
 export function Buscar({ cliente, navegar }: { cliente: Cliente; navegar: Navegar }) {
   const [consulta, setConsulta] = useState("");
   const [filtros, setFiltros] = useState<Filtros>(INICIALES);

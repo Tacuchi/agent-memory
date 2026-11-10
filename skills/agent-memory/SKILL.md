@@ -32,6 +32,10 @@ con `memory_get` o `memory_search`.
   - `proyecto`: estado de trabajo vivo; cerralo con `memory_expire` y `cerrar_trabajo` al terminar.
 - Elegí el ámbito: por defecto el proyecto actual; `repo` si solo vale para este repo; `global`
   para preferencias y lo que vale en todos lados.
+- Un proyecto existe solo si la persona lo declaró: un archivo `.agent-memory.json` con
+  `{"proyecto": "<nombre>"}` en una carpeta (gana el más cercano), o `"proyectos": {"<nombre>":
+  ["<carpeta>"]}` en `~/.agent-memory/config.json`. Varias carpetas con el mismo nombre son el
+  mismo proyecto. Sin declaración, lo nuevo nace en el repo actual y las preferencias en global.
 
 ## Buscar antes de crear, actualizar en sitio
 

@@ -6,7 +6,7 @@ import { REPO, storeTemporal } from "../helpers/temp.js";
 const enRepo = { ambito: "repo" as const, ambitoRef: REPO };
 const persona = { actor: "persona" as const };
 
-describe("modo de búsqueda y degradación (T2.4)", () => {
+describe("modo de búsqueda y degradación", () => {
   let t: ReturnType<typeof storeTemporal>;
   afterEach(() => t.cerrar());
 
@@ -64,8 +64,8 @@ describe("modo de búsqueda y degradación (T2.4)", () => {
 
   it("la sintaxis de FTS5 en la consulta se busca como texto, sin romper", async () => {
     t = storeTemporal();
-    await t.store.crear({ tipo: "referencia", titulo: "Comando", contenido: 'usar "aw flow submit" AND NOT x*', ...enRepo }, persona);
-    const r = await new Buscador(t.store, null).buscar('"aw flow submit" AND NOT x* (');
+    await t.store.crear({ tipo: "referencia", titulo: "Comando", contenido: 'usar "npm run build" AND NOT x*', ...enRepo }, persona);
+    const r = await new Buscador(t.store, null).buscar('"npm run build" AND NOT x* (');
     expect(r.resultados).toHaveLength(1);
   });
 });

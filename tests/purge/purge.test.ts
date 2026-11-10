@@ -7,7 +7,7 @@ import { correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { EmbedderFalso } from "../helpers/embedders.js";
 import { asegurarBuild, servicioDePrueba } from "../helpers/servicio.js";
 
-// AC-27: la purga física solo existe en la CLI, pide escribir el id, borra la entrada con toda su
+// La purga física solo existe en la CLI, pide escribir el id, borra la entrada con toda su
 // historia en una transacción y deja un registro con id y fecha, sin el contenido.
 
 const CONTENIDO = "contenido-sintetico-a-purgar-7f3a";

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { servicioDePrueba, type ServicioDePrueba } from "../helpers/servicio.js";
 import { comoPersona, sesionWeb } from "../helpers/web.js";
 
-// AC-11 y AC-12 por HTTP, con la cookie de la web: rechazo con motivo, fusión y caducidad.
+// Gobernanza por HTTP, con la cookie de la web: rechazo con motivo, fusión y caducidad.
 
 let s: ServicioDePrueba;
 let cookie: string;
@@ -21,7 +21,7 @@ async function pendiente(titulo = "Propuesta del agente") {
   return r.datos.entrada.id as number;
 }
 
-describe("bandeja: aprobar y rechazar (AC-11)", () => {
+describe("bandeja: aprobar y rechazar", () => {
   it("escenario «rechazo sin motivo» desde la web: no se registra y la entrada sigue pendiente", async () => {
     const id = await pendiente();
     for (const motivo of [undefined, "", "   "]) {
@@ -53,7 +53,7 @@ describe("bandeja: aprobar y rechazar (AC-11)", () => {
   });
 });
 
-describe("fusión (AC-12)", () => {
+describe("fusión", () => {
   it("la resultante nace validada por la web y reemplaza a las originales, que conservan su historia", async () => {
     const a = (await persona("crear", { tipo: "leccion", titulo: "Lección A", contenido: "parte a", ambito: "global" })).datos.entrada.id;
     const b = await pendiente("Lección B");
@@ -96,7 +96,7 @@ describe("fusión (AC-12)", () => {
   });
 });
 
-describe("caducar y revertir (AC-12, AC-23)", () => {
+describe("caducar y revertir", () => {
   it("caduca hoy o en la fecha elegida, sin perder historia", async () => {
     const a = (await persona("crear", { tipo: "referencia", titulo: "Ref A", contenido: "a", ambito: "global" })).datos.entrada.id;
     const b = (await persona("crear", { tipo: "referencia", titulo: "Ref B", contenido: "b", ambito: "global" })).datos.entrada.id;

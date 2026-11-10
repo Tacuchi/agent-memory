@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild } from "../helpers/servicio.js";
 
-// T3.4, AC-28: la ayuda lista arrancar, parar y estado; abrir la web y buscar; exportar; instalar y
+// La ayuda lista arrancar, parar y estado; abrir la web y buscar; exportar; instalar y
 // desinstalar; diagnosticar; purgar. Y cada comando responde, en un HOME temporal.
 
 const AC28 = ["start", "stop", "status", "open", "search", "export", "install claude-code", "uninstall claude-code", "doctor", "purge"];
@@ -15,8 +15,8 @@ beforeAll(async () => {
 });
 afterAll(async () => e.limpiar());
 
-describe("lista de comandos (AC-28)", () => {
-  it("la ayuda lista todos los comandos de AC-28", async () => {
+describe("lista de comandos", () => {
+  it("la ayuda lista todos los comandos del producto", async () => {
     const ayuda = await correr(e, ["--help"]);
     expect(ayuda.code).toBe(0);
     for (const c of AC28) expect(ayuda.stdout).toMatch(new RegExp(`^\\s+${c}\\b`, "m"));

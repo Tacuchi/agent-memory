@@ -17,7 +17,7 @@ import { purgar } from "./purge/purge.js";
 import { MemoryStore } from "./store/store.js";
 import { version } from "./version.js";
 
-// Punto de entrada del bin `agent-memory`, sobre `node:util` `parseArgs` (plan 002, T1.1).
+// Punto de entrada del bin `agent-memory`, sobre `node:util` `parseArgs`.
 const AYUDA = `uso: agent-memory <comando> [opciones]
 
 servicio:
@@ -44,7 +44,15 @@ agentes:
   uninstall claude-code     quita exactamente lo que agregó install
   hook session-start        hook SessionStart de Claude Code (lo llama Claude Code)
 
-  --version                 muestra la versión`;
+  --version                 muestra la versión
+
+proyectos:
+  Un proyecto agrupa carpetas (notas, repos de código) bajo un nombre. Se declara de dos formas;
+  gana la carpeta declarada más cercana al directorio de trabajo:
+    - un archivo .agent-memory.json en la carpeta: {"proyecto": "<nombre>"}
+    - en ~/.agent-memory/config.json: "proyectos": {"<nombre>": ["<carpeta>", "~/<carpeta>"]}
+  Sin declaración no hay proyecto: una entrada nueva nace en el repo actual (o en global fuera de
+  un repo). Una preferencia nace en global salvo que se pida otro ámbito.`;
 
 const ESPERA_START_MS = 20_000;
 
@@ -165,8 +173,8 @@ async function doctor(): Promise<number> {
 }
 
 /**
- * Abre la web (T1.2): arranca el servicio si hace falta, pide con el token un enlace de un solo uso
- * y lo abre en el navegador. El enlace vence en 60 s y no sirve una segunda vez (AC-21).
+ * Abre la web: arranca el servicio si hace falta, pide con el token un enlace de un solo uso
+ * y lo abre en el navegador. El enlace vence en 60 s y no sirve una segunda vez.
  */
 async function abrir(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { imprimir: { type: "boolean" } } });
@@ -193,7 +201,7 @@ async function abrir(args: string[]): Promise<number> {
   return salida("web abierta en el navegador (el enlace sirve una sola vez y vence en 60 s)");
 }
 
-/** Exportación (T3.1, AC-22): la hace el servicio, que se arranca si hace falta. */
+/** Exportación: la hace el servicio, que se arranca si hace falta. */
 async function exportarCli(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
@@ -215,7 +223,7 @@ async function exportarCli(args: string[]): Promise<number> {
 }
 
 /**
- * Purga física (T3.2, AC-27): abre la base directamente, sin la API, y pide escribir el id. Es
+ * Purga física: abre la base directamente, sin la API, y pide escribir el id. Es
  * irreversible: la confirmación es la única barrera.
  */
 async function purge(args: string[]): Promise<number> {

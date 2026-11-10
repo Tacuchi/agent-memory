@@ -8,7 +8,7 @@ type ParaRevisar = Entrada & { motivos: ("sin_uso" | "sin_verificar")[]; usada_e
 const MOTIVOS = { sin_uso: "sin uso", sin_verificar: "sin verificar" } as const;
 
 /**
- * Vista de revisión (AC-25): lo que lleva tiempo sin uso o sin verificar. Desde aquí se confirma
+ * Vista de revisión: lo que lleva tiempo sin uso o sin verificar. Desde aquí se confirma
  * que sigue vigente (queda la fecha), se caduca o se edita. Nada vence solo.
  */
 export function Revision({ cliente, navegar }: { cliente: Cliente; navegar: Navegar }) {

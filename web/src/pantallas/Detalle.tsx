@@ -4,8 +4,8 @@ import type { Navegar } from "../App";
 import { Aviso, Estados, fecha } from "./comunes";
 
 /**
- * Detalle de una entrada (AC-10, AC-12): estados, relaciones en ambos sentidos, revisiones con
- * restaurar, edición que conserva la validación (S-10), cambio de ámbito, caducar y revertir.
+ * Detalle de una entrada: estados, relaciones en ambos sentidos, revisiones con
+ * restaurar, edición que conserva la validación, cambio de ámbito, caducar y revertir.
  */
 export function Detalle({ id, cliente, navegar }: { id: number; cliente: Cliente; navegar: Navegar }) {
   const [entrada, setEntrada] = useState<Entrada | null>(null);
@@ -38,7 +38,7 @@ export function Detalle({ id, cliente, navegar }: { id: number; cliente: Cliente
     setHecho(null);
     try {
       const r = await cliente<{ redactados?: string[] }>(op, { id, ...cuerpo });
-      // AC-26: si al guardar se redactó un secreto, la persona lo sabe (sin el valor).
+      // Si al guardar se redactó un secreto, la persona lo sabe (sin el valor).
       const redactados = r?.redactados ?? [];
       setHecho(redactados.length ? `${mensaje} · se redactó: ${redactados.join(", ")}` : mensaje);
       await cargar();

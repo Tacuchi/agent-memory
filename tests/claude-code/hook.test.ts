@@ -6,7 +6,7 @@ import { leerPid, procesoVivo } from "../../src/service/daemon.js";
 import { correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild } from "../helpers/servicio.js";
 
-// T2.2 (AC-29): el hook arranca el servicio sin bloquear, imprime el índice o una línea de aviso y
+// El hook arranca el servicio sin bloquear, imprime el índice o una línea de aviso y
 // siempre termina con éxito.
 
 let e: EntornoCli;

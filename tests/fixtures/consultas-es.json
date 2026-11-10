@@ -1,5 +1,5 @@
 {
-  "descripcion": "Corpus y consultas sintéticos en español para medir y vigilar la búsqueda (AC-04). Ninguna nota es real.",
+  "descripcion": "Corpus y consultas sintéticos en español para medir y vigilar la búsqueda. Ninguna nota es real.",
   "corpus": [
     {
       "clave": "reintentos",
@@ -86,9 +86,9 @@
       "contenido": "Un fallo del almacén se informa como error y nunca como una lista vacía."
     },
     {
-      "clave": "estado-plan",
+      "clave": "estado-trabajo",
       "tipo": "proyecto",
-      "titulo": "Estado del plan 001",
+      "titulo": "Estado del trabajo",
       "contenido": "Fase 2 en curso: búsqueda híbrida."
     },
     {

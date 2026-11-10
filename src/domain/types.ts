@@ -1,4 +1,4 @@
-/** Seis tipos de entrada (AC-17). `proyecto` es estado de trabajo vivo, fuera de la validación. */
+/** Seis tipos de entrada. `proyecto` es estado de trabajo vivo, fuera de la validación. */
 export const TIPOS = ["leccion", "decision", "convencion", "referencia", "preferencia", "proyecto"] as const;
 export type Tipo = (typeof TIPOS)[number];
 
@@ -11,7 +11,7 @@ export type Vida = (typeof VIDAS)[number];
 export const VALIDACIONES = ["pendiente", "validada", "rechazada"] as const;
 export type Validacion = (typeof VALIDACIONES)[number];
 
-/** Vía por la que la persona validó una entrada (AC-07). */
+/** Vía por la que la persona validó una entrada. */
 export const VIAS = ["web", "mcp", "conversacion"] as const;
 export type Via = (typeof VIAS)[number];
 
@@ -37,18 +37,18 @@ export interface Entrada {
   reemplazadaPor: number | null;
   /** Reemplazo propuesto: la entrada que esta reemplazará cuando quede validada. */
   reemplazaA: number | null;
-  /** null en las entradas de proyecto (AC-24). */
+  /** null en las entradas de proyecto. */
   validacion: Validacion | null;
   validacionVia: Via | null;
   motivoRechazo: string | null;
-  /** Vencimiento hecho por el agente que la persona puede revertir (AC-23). */
+  /** Vencimiento hecho por el agente que la persona puede revertir. */
   caducidad: Caducidad | null;
   creadaEn: string;
   actualizadaEn: string;
   validadaEn: string | null;
   usadaEn: string | null;
   usos: number;
-  /** Última vez que la persona confirmó en la vista de revisión que sigue vigente (S-11). */
+  /** Última vez que la persona confirmó en la vista de revisión que sigue vigente. */
   verificadaEn: string | null;
 }
 

@@ -12,7 +12,7 @@ import { asegurarToken } from "./token.js";
 
 export interface App extends Servicio {
   store: MemoryStore;
-  /** Termina cuando se regeneraron los vectores faltantes o de otro modelo (T2.3). */
+  /** Termina cuando se regeneraron los vectores faltantes o de otro modelo. */
   regeneracion: Promise<number>;
 }
 

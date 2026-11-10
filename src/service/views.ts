@@ -2,7 +2,7 @@ import type { Entrada, Relacion, Revision } from "../domain/types.js";
 import { marcar, type Resultado } from "../search/search.js";
 
 /**
- * Vista pública de una entrada. Siempre trae los campos de AC-03: id, título, tipo, ámbito,
+ * Vista pública de una entrada. Siempre trae los ocho campos de un resultado: id, título, tipo, ámbito,
  * estado de vida, vigencia, estado de validación y fecha de la última actualización.
  */
 export function vistaEntrada(e: Entrada, conContenido = true) {

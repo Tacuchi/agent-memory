@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { crudo, servicioDePrueba, type ServicioDePrueba } from "../helpers/servicio.js";
 import { comoPersona, sesionWeb } from "../helpers/web.js";
 
-// AC-21 en la web: enlace de un solo uso, sesión por cookie, y sin sesión ni token no hay datos.
+// Acceso a la web: enlace de un solo uso, sesión por cookie, y sin sesión ni token no hay datos.
 
 let s: ServicioDePrueba;
 const host = () => ({ host: `127.0.0.1:${s.app.port}` });
@@ -96,8 +96,8 @@ describe("enlace de un solo uso", () => {
   });
 });
 
-describe("la persona desde la web: buscar, ver, editar y restaurar (AC-10)", () => {
-  it("todo pasa por la API con la cookie y la edición conserva la validación (S-10)", async () => {
+describe("la persona desde la web: buscar, ver, editar y restaurar", () => {
+  it("todo pasa por la API con la cookie y la edición conserva la validación", async () => {
     const { cookie } = await sesionWeb(s);
     const creada = await comoPersona(s, cookie, "crear", { tipo: "leccion", titulo: "Lección de prueba", contenido: "versión uno", ambito: "global" });
     const id = creada.datos.entrada.id as number;

@@ -9,7 +9,7 @@ import { procesoVivo } from "../../src/service/daemon.js";
 import { clienteMcp, correr, entornoCli, llamarHerramienta, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild } from "../helpers/servicio.js";
 
-// F1 (T1.1-T1.3, AC-29): la CLI arranca, para, muestra el estado, busca y diagnostica, siempre
+// La CLI arranca, para, muestra el estado, busca y diagnostica, siempre
 // sobre HOME, datos y puerto temporales. Con el servicio caído nada devuelve un vacío.
 
 const ARGS_MINIMOS: Record<(typeof HERRAMIENTAS)[number], Record<string, unknown>> = {
@@ -37,7 +37,7 @@ afterAll(async () => {
   await e.limpiar();
 });
 
-describe("servicio caído (T1.2)", () => {
+describe("servicio caído", () => {
   it("status sale con 3 y nombra «agent-memory start»", async () => {
     const r = await correr(e, ["status"]);
     expect(r.code).toBe(3);
@@ -76,7 +76,7 @@ describe("servicio caído (T1.2)", () => {
   });
 });
 
-describe("start, status, search y stop (T1.1)", () => {
+describe("start, status, search y stop", () => {
   let pid: number;
 
   it("start deja el servicio respondiendo, con archivo de pid y token 0600", async () => {

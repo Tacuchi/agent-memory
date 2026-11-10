@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild, crudo } from "../helpers/servicio.js";
 
-// T1.2: `agent-memory open` arranca el servicio si hace falta y abre un enlace de un solo uso.
+// `agent-memory open` arranca el servicio si hace falta y abre un enlace de un solo uso.
 // El navegador es un script falso que anota la URL: nunca se abre un navegador real.
 
 let e: EntornoCli | null = null;

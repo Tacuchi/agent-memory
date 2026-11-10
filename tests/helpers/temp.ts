@@ -30,4 +30,4 @@ export function storeTemporal(opciones: OpcionesStore = {}) {
 }
 
 export const REPO = "github.com/ejemplo/repo-sintetico";
-export const PROYECTO = "proyecto:/tmp/hub-sintetico";
+export const PROYECTO = "proyecto:sintetico";

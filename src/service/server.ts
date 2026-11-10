@@ -31,7 +31,7 @@ export interface Servicio {
 }
 
 /**
- * Servicio local (T3.1, AC-21): solo 127.0.0.1, `Host` de loopback y token en toda petición.
+ * Servicio local: solo 127.0.0.1, `Host` de loopback y token en toda petición.
  * La web entra con un enlace de un solo uso que deja una cookie de sesión HttpOnly + Strict.
  */
 export async function iniciarServicio(opciones: OpcionesServidor): Promise<Servicio> {
@@ -51,7 +51,7 @@ export async function iniciarServicio(opciones: OpcionesServidor): Promise<Servi
 
     const actor = autenticar(req);
     if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
-      // La web es de la persona: sin cookie de sesión no se sirve ni un archivo (AC-21).
+      // La web es de la persona: sin cookie de sesión no se sirve ni un archivo.
       if (actor !== "persona") return responderSinSesion(res);
       return servirWeb(url.pathname, res);
     }

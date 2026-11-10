@@ -7,7 +7,7 @@ import { REPO, dirTemporal, storeTemporal } from "../helpers/temp.js";
 
 const enRepo = { ambito: "repo" as const, ambitoRef: REPO };
 
-describe("revisiones y restauración (AC-05)", () => {
+describe("revisiones y restauración", () => {
   let t: ReturnType<typeof storeTemporal>;
   afterEach(() => t.cerrar());
 
@@ -27,7 +27,7 @@ describe("revisiones y restauración (AC-05)", () => {
     expect(revs[3]?.accion).toBe("restaurar:1");
   });
 
-  it("restaurar una validada por el agente la devuelve a pendiente (S-05 + AC-23)", async () => {
+  it("restaurar una validada por el agente la devuelve a pendiente", async () => {
     t = storeTemporal();
     const { entrada } = await t.store.crear({ tipo: "leccion", titulo: "v1", contenido: "uno", ...enRepo }, { actor: "persona" });
     await t.store.editar(entrada.id, { contenido: "dos" }, { actor: "persona" });
@@ -45,7 +45,7 @@ describe("revisiones y restauración (AC-05)", () => {
   });
 });
 
-describe("base local única (AC-01)", () => {
+describe("base local única", () => {
   it("el almacén vive en un único memoria.db del directorio de datos y dos aperturas ven lo mismo", async () => {
     const { dir, limpiar } = dirTemporal();
     try {

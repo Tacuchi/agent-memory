@@ -23,7 +23,7 @@ export function leerConjunto(ruta: string): Conjunto {
   return JSON.parse(readFileSync(ruta, "utf8")) as Conjunto;
 }
 
-/** Carga el corpus en una base en memoria con el modelo dado y corre cada consulta (T2.2). */
+/** Carga el corpus en una base en memoria con el modelo dado y corre cada consulta. */
 export async function medir(conjunto: Conjunto, modelo: ModeloEmbeddings, cache?: string): Promise<Medicion> {
   const embedder = new TransformersEmbedder(modelo, cache ? { cache } : {});
   const store = MemoryStore.abrir(":memory:", { embedder });

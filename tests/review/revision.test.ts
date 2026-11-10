@@ -7,7 +7,7 @@ import { leerToken } from "../../src/service/token.js";
 import { EmbedderFalso } from "../helpers/embedders.js";
 import { dirTemporal, storeTemporal } from "../helpers/temp.js";
 
-// AC-25: la vista de revisión lista lo que lleva tiempo sin uso o sin verificar; confirmar que
+// La vista de revisión lista lo que lleva tiempo sin uso o sin verificar; confirmar que
 // sigue vigente deja la fecha; nada vence por antigüedad.
 
 const DIA = 86_400_000;

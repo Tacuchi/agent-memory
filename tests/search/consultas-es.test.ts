@@ -6,7 +6,7 @@ import { modeloReal } from "../helpers/embedders.js";
 
 const conjunto = leerConjunto("tests/fixtures/consultas-es.json");
 
-describe("conjunto de consultas en español (T2.1)", () => {
+describe("conjunto de consultas en español", () => {
   it("cada paráfrasis no comparte ninguna palabra con contenido con su entrada esperada", () => {
     for (const c of conjunto.consultas.filter((x) => x.clase === "parafrasis")) {
       const e = conjunto.corpus.find((x) => x.clave === c.esperada);
@@ -23,7 +23,7 @@ describe("conjunto de consultas en español (T2.1)", () => {
   });
 });
 
-describe("búsqueda híbrida con el modelo fijado (AC-04)", () => {
+describe("búsqueda híbrida con el modelo fijado", () => {
   it("cada paráfrasis sale entre las tres primeras y cada nombre exacto primero, sin red", async () => {
     modeloReal();
     const m = await medir(conjunto, modeloFijado());

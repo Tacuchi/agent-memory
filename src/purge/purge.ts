@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { transaction } from "../db/driver.js";
 import type { MemoryStore } from "../store/store.js";
 
-// Purga física (AC-27): la única forma de borrar. Solo la CLI la ofrece y abre la base
+// Purga física: la única forma de borrar. Solo la CLI la ofrece y abre la base
 // directamente; ninguna operación de la API purga. Borra la entrada con toda su historia en una
 // transacción y anota en `purgas.log` solo el id y la fecha, nunca el contenido.
 

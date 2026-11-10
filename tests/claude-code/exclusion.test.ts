@@ -7,14 +7,14 @@ import { coincidePatron, contextoExcluido } from "../../src/exclusion.js";
 import { clienteMcp, correr, entornoCli, llamarHerramienta, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild } from "../helpers/servicio.js";
 
-// T2.4 (AC-20): exclusión por patrones de la configuración local. El paquete trae la lista vacía
+// Exclusión por patrones de la configuración local. El paquete trae la lista vacía
 // y las pruebas usan solo el patrón sintético example.org/acme.
 
 const PATRON = "example.org/acme";
 const sin = { patrones: [], excepciones: [] };
 
 describe("patrones de exclusión", () => {
-  const ctx = (repo: string | null, ruta: string | null = null, proyecto: string | null = null) => ({ repo, proyecto, ruta });
+  const ctx = (repo: string | null, ruta: string | null = null) => ({ repo, proyecto: null, ruta });
 
   it("el paquete trae la lista vacía: nada queda excluido por defecto", () => {
     const config = cargarConfig({ AGENT_MEMORY_HOME: "/nonexistent/agent-memory-sin-config" });
@@ -35,7 +35,6 @@ describe("patrones de exclusión", () => {
     expect(coincidePatron("/tmp/acme", ctx(null, "/tmp/acme/repo"), "")).toBe(true);
     expect(coincidePatron("/tmp/acme", ctx(null, "/tmp/acme-otro"), "")).toBe(false);
     expect(coincidePatron("~/trabajo/acme", ctx("ruta:/u/p/trabajo/acme/x"), "/u/p")).toBe(true);
-    expect(coincidePatron("/tmp/acme", ctx(null, null, "proyecto:/tmp/acme/hub"), "")).toBe(true);
   });
 
   it("una excepción gana sobre los patrones", () => {
@@ -45,7 +44,7 @@ describe("patrones de exclusión", () => {
   });
 });
 
-describe("escenario «sesión en un repo excluido» (AC-20)", () => {
+describe("escenario «sesión en un repo excluido»", () => {
   let e: EntornoCli;
   let repo: string;
 

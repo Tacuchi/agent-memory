@@ -3,7 +3,7 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { montarWeb } from "../web/ayuda";
 
-// AC-25 en la web: la vista lista con su motivo y permite confirmar, caducar o ir a editar.
+// Vista de revisión en la web: lista con su motivo y permite confirmar, caducar o ir a editar.
 
 const DIA = 86_400_000;
 let w: ReturnType<typeof montarWeb>;

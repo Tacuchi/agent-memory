@@ -5,7 +5,7 @@ import type { Config } from "../config.js";
 import { HOST } from "./server.js";
 import { leerToken } from "./token.js";
 
-// Ciclo de vida del servicio fuera del terminal (T1.1, AC-29): `start` y el hook lo lanzan
+// Ciclo de vida del servicio fuera del terminal: `start` y el hook lo lanzan
 // separado, con archivo de pid, y esperan a que responda; `stop` lo apaga limpio.
 
 export interface Pid {

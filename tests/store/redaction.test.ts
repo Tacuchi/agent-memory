@@ -19,7 +19,7 @@ const CASOS: [string, string][] = [
   ["asignacion_secreta", "token = abc123sintetico"],
 ];
 
-describe("redacción de secretos (AC-26)", () => {
+describe("redacción de secretos", () => {
   it.each(CASOS)("redacta %s sin dejar el valor", (tipo, secreto) => {
     const { texto, redactados } = redactar(`antes ${secreto} después`);
     expect(redactados).toContain(tipo);
@@ -30,7 +30,7 @@ describe("redacción de secretos (AC-26)", () => {
   });
 
   it("no toca el texto sin secretos", () => {
-    const texto = "Usar `aw flow submit` con el token del archivo 0600; ver sk- en la doc.";
+    const texto = "Usar `npm run build` con el token del archivo 0600; ver sk- en la doc.";
     expect(redactar(texto)).toEqual({ texto, redactados: [] });
   });
 

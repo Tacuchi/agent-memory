@@ -1,6 +1,6 @@
 import type { Entrada } from "../api";
 
-/** Estados de una entrada en una línea: vida, validación, vigencia y caducidad (AC-03). */
+/** Estados de una entrada en una línea: vida, validación, vigencia y caducidad. */
 export function Estados({ entrada }: { entrada: Entrada }) {
   return (
     <span className="estados">

@@ -2,17 +2,17 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-/** Puerto por defecto del servicio local (plan 001, Implementation decisions). */
+/** Puerto por defecto del servicio local. */
 export const PUERTO_POR_DEFECTO = 47821;
-/** Tope del índice de inicio en tokens (plan 002): un tercio de lo que gasta la memoria nativa. */
+/** Tope del índice de inicio en tokens: un tercio de lo que gasta la memoria nativa. */
 export const TOPE_INDICE_POR_DEFECTO = 1500;
-/** Espera máxima del hook de inicio por el servicio (plan 002): nunca bloquea la sesión. */
+/** Espera máxima del hook de inicio por el servicio: nunca bloquea la sesión. */
 export const ESPERA_HOOK_POR_DEFECTO_MS = 2000;
-/** Umbrales de la vista de revisión (plan 003): propuestas a revisar por la persona. */
+/** Umbrales de la vista de revisión: propuestas a revisar por la persona. */
 export const DIAS_SIN_USO_POR_DEFECTO = 90;
 export const DIAS_SIN_VERIFICAR_POR_DEFECTO = 180;
 
-/** Repos excluidos (AC-20): el paquete trae la lista vacía; los patrones son de la persona. */
+/** Repos excluidos: el paquete trae la lista vacía; los patrones son de la persona. */
 export interface Exclusion {
   patrones: string[];
   excepciones: string[];
@@ -26,13 +26,13 @@ export interface Config {
   tokenPath: string;
   pidPath: string;
   logPath: string;
-  /** Registro de purgas: solo id y fecha (AC-27). */
+  /** Registro de purgas: solo id y fecha. */
   purgasPath: string;
-  /** Carpeta por defecto de las exportaciones pedidas desde la web (AC-22). */
+  /** Carpeta por defecto de las exportaciones pedidas desde la web. */
   exportacionesPath: string;
   port: number;
-  /** Carpetas declaradas como proyecto (AC-19). */
-  proyectos: string[];
+  /** Proyectos declarados: nombre → carpetas que le pertenecen. */
+  proyectos: Record<string, string[]>;
   exclusion: Exclusion;
   topeIndice: number;
   esperaHookMs: number;
@@ -42,7 +42,7 @@ export interface Config {
 /** Forma de `config.json`. Las claves que la CLI no conoce se conservan al reescribirlo. */
 export interface ArchivoConfig {
   port?: number;
-  proyectos?: string[];
+  proyectos?: Record<string, string[]>;
   exclusion?: Partial<Exclusion>;
   indice?: { tope_tokens?: number };
   hook?: { espera_ms?: number };
@@ -69,7 +69,7 @@ export function cargarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     purgasPath: join(home, "purgas.log"),
     exportacionesPath: join(home, "exportaciones"),
     port,
-    proyectos: archivo.proyectos ?? [],
+    proyectos: proyectos(archivo.proyectos),
     exclusion: {
       patrones: textos(archivo.exclusion?.patrones, "exclusion.patrones"),
       excepciones: textos(archivo.exclusion?.excepciones, "exclusion.excepciones"),
@@ -102,6 +102,19 @@ function puerto(valor: string | undefined): number | undefined {
   const n = Number(valor);
   if (!Number.isInteger(n) || n < 0 || n > 65535) throw new Error(`AGENT_MEMORY_PORT inválido: ${valor}`);
   return n;
+}
+
+function proyectos(valor: unknown): Record<string, string[]> {
+  if (valor === undefined) return {};
+  if (typeof valor !== "object" || valor === null || Array.isArray(valor)) {
+    throw new Error('config.json: proyectos debe ser un objeto {"<nombre>": ["<carpeta>", …]}');
+  }
+  const resultado: Record<string, string[]> = {};
+  for (const [nombre, carpetas] of Object.entries(valor)) {
+    if (!nombre.trim()) throw new Error("config.json: proyectos no admite un nombre vacío");
+    resultado[nombre.trim()] = textos(carpetas, `proyectos.${nombre}`);
+  }
+  return resultado;
 }
 
 function textos(valor: unknown, clave: string): string[] {

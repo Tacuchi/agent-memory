@@ -2,7 +2,7 @@ import { hoy } from "../domain/rules.js";
 import type { Ambito, Contexto, Tipo, Validacion } from "../domain/types.js";
 
 /**
- * Filtros de listado y búsqueda. Sin filtros explícitos aplica los de AC-09: activas, vigentes,
+ * Filtros de listado y búsqueda. Sin filtros explícitos aplica los que recibe el agente por defecto: activas, vigentes,
  * validadas o pendientes, y las de proyecto; las rechazadas, reemplazadas y vencidas solo salen
  * cuando se piden.
  */

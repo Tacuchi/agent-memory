@@ -1,22 +1,23 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { MARCADOR_PROYECTO } from "../../src/context.js";
 import { HERRAMIENTAS } from "../../src/mcp/server.js";
 import { dirTemporal } from "../helpers/temp.js";
 import { CLI, asegurarBuild, crudo, servicioDePrueba, type ServicioDePrueba } from "../helpers/servicio.js";
 
-// Punta a punta (T3.4): el cliente MCP genérico del SDK habla por stdio con `agent-memory mcp`,
+// Punta a punta: el cliente MCP genérico del SDK habla por stdio con `agent-memory mcp`,
 // que traduce a un servicio real sobre un directorio de datos temporal.
 
 const CAMPOS_AC03 = ["id", "titulo", "tipo", "ambito", "vida", "vigencia_hasta", "validacion", "actualizada_en"];
 
 let s: ServicioDePrueba;
 let cliente: Client;
-let hub: string;
-let limpiarHub: () => void;
+let carpeta: string;
+let limpiarCarpeta: () => void;
 
 async function herramienta(nombre: string, args: Record<string, unknown> = {}) {
   const r = (await cliente.callTool({ name: nombre, arguments: args })) as { isError?: boolean; content: { type: string; text: string }[] };
@@ -51,18 +52,17 @@ function ids(resultados: { id: number }[]) {
 beforeAll(async () => {
   asegurarBuild();
   s = await servicioDePrueba();
-  // Un repo git sin remoto que además es un hub de Workline: da contexto de repo y de proyecto.
-  const tmp = dirTemporal("agent-memory-hub-");
-  limpiarHub = tmp.limpiar;
-  hub = realpathSync(tmp.dir);
-  execFileSync("git", ["init", "-q"], { cwd: hub });
-  mkdirSync(join(hub, ".workflow"));
-  writeFileSync(join(hub, ".workflow", "workline.json"), "{}");
+  // Un repo git sin remoto con el marcador de proyecto propio: da contexto de repo y de proyecto.
+  const tmp = dirTemporal("agent-memory-proyecto-");
+  limpiarCarpeta = tmp.limpiar;
+  carpeta = realpathSync(tmp.dir);
+  execFileSync("git", ["init", "-q"], { cwd: carpeta });
+  writeFileSync(join(carpeta, MARCADOR_PROYECTO), JSON.stringify({ proyecto: "sintetico" }));
 
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--disable-warning=ExperimentalWarning", CLI, "mcp"],
-    cwd: hub,
+    cwd: carpeta,
     env: { ...(process.env as Record<string, string>), AGENT_MEMORY_HOME: s.home, AGENT_MEMORY_PORT: String(s.app.port) },
     stderr: "pipe",
   });
@@ -73,20 +73,20 @@ beforeAll(async () => {
 afterAll(async () => {
   await cliente?.close();
   await s?.cerrar();
-  limpiarHub?.();
+  limpiarCarpeta?.();
 });
 
 describe("agent-memory mcp con un cliente MCP genérico", () => {
-  it("AC-02: lista exactamente las once herramientas memory_*", async () => {
+  it("lista exactamente las once herramientas memory_*", async () => {
     const { tools } = await cliente.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...HERRAMIENTAS].sort());
     expect(tools).toHaveLength(11);
     for (const t of tools) expect(t.description, t.name).toBeTruthy();
   });
 
-  it("AC-03 + AC-19: el contexto sale del directorio de trabajo y cada resultado trae los ocho campos", async () => {
+  it("el contexto sale del directorio de trabajo y cada resultado trae los ocho campos", async () => {
     const { entrada } = await ok("memory_create", { tipo: "leccion", titulo: "Índices parciales", contenido: "Un índice parcial acelera filtros frecuentes" });
-    expect(entrada).toMatchObject({ ambito: "proyecto", ambito_ref: `proyecto:${hub}`, validacion: "pendiente" });
+    expect(entrada).toMatchObject({ ambito: "proyecto", ambito_ref: "proyecto:sintetico", validacion: "pendiente" });
 
     const busqueda = await ok("memory_search", { consulta: "índice parcial" });
     expect(busqueda.modo).toBe("hibrido");
@@ -98,11 +98,13 @@ describe("agent-memory mcp con un cliente MCP genérico", () => {
 
     const global = await ok("memory_create", { tipo: "preferencia", titulo: "Idioma", contenido: "Responder en español", ambito: "global" });
     expect(global.entrada).toMatchObject({ ambito: "global", ambito_ref: null });
+    const preferencia = await ok("memory_create", { tipo: "preferencia", titulo: "Tono", contenido: "Respuestas breves" });
+    expect(preferencia.entrada).toMatchObject({ ambito: "global", ambito_ref: null });
     const repo = await ok("memory_create", { tipo: "referencia", titulo: "Repo", contenido: "dato del repo", ambito: "repo" });
-    expect(repo.entrada).toMatchObject({ ambito: "repo", ambito_ref: `ruta:${hub}` });
+    expect(repo.entrada).toMatchObject({ ambito: "repo", ambito_ref: `ruta:${carpeta}` });
   });
 
-  it("AC-07: lo que crea el agente nace pendiente y memory_approve registra la vía mcp", async () => {
+  it("lo que crea el agente nace pendiente y memory_approve registra la vía mcp", async () => {
     const { entrada } = await ok("memory_create", { tipo: "decision", titulo: "Decisión a aprobar", contenido: "Usar WAL" });
     expect(ids((await ok("memory_pending")).entradas)).toContain(entrada.id);
     const aprobada = await ok("memory_approve", { id: entrada.id });
@@ -135,7 +137,7 @@ describe("agent-memory mcp con un cliente MCP genérico", () => {
     const confirmado = await ok("memory_create", { ...original, huella: borrador.huella });
     expect(confirmado.entrada).toMatchObject({ validacion: "validada", validacion_via: "conversacion" });
 
-    // AC-23: editar lo validado con el borrador confirmado lo mantiene validado; sin él, vuelve a pendiente.
+    // Editar lo validado con el borrador confirmado lo mantiene validado; sin él, vuelve a pendiente.
     const edicion = { id: confirmado.entrada.id, contenido: "Prefijo feature/ y kebab-case en minúsculas" };
     const { huella } = await ok("memory_edit", { ...edicion, borrador: true });
     expect((await ok("memory_edit", { ...edicion, huella })).entrada.validacion).toBe("validada");
@@ -190,7 +192,7 @@ describe("agent-memory mcp con un cliente MCP genérico", () => {
     expect((await ok("memory_revisions", { id: estado.id })).revisiones).toHaveLength(3);
   });
 
-  it("AC-31: relaciones por id en ambos sentidos con su estado; cambiar el título no rompe nada", async () => {
+  it("relaciones por id en ambos sentidos con su estado; cambiar el título no rompe nada", async () => {
     const a = (await ok("memory_create", { tipo: "decision", titulo: "Usar SQLite", contenido: "una sola base" })).entrada;
     const b = (await ok("memory_create", { tipo: "leccion", titulo: "WAL", contenido: "lectores sin bloqueo", relacionadas: [a.id] })).entrada;
     const c = (await ok("memory_create", { tipo: "referencia", titulo: "Doc", contenido: "sqlite-vec" })).entrada;
@@ -209,7 +211,7 @@ describe("agent-memory mcp con un cliente MCP genérico", () => {
     expect(deB.relaciones).toEqual([expect.objectContaining({ id: a.id, titulo: "Usar SQLite como base única", sentido: "saliente" })]);
   });
 
-  it("AC-26: un secreto se redacta antes de guardar y el aviso no trae el valor", async () => {
+  it("un secreto se redacta antes de guardar y el aviso no trae el valor", async () => {
     const secreto = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
     const r = await ok("memory_create", { tipo: "referencia", titulo: "Acceso", contenido: `token del bot: ${secreto}` });
     expect(r.redactados).toEqual(["github_token"]);
@@ -221,7 +223,7 @@ describe("agent-memory mcp con un cliente MCP genérico", () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: ["--disable-warning=ExperimentalWarning", CLI, "mcp"],
-      cwd: hub,
+      cwd: carpeta,
       env: { ...(process.env as Record<string, string>), AGENT_MEMORY_HOME: otro.home, AGENT_MEMORY_PORT: String(otro.app.port) },
       stderr: "pipe",
     });

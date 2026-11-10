@@ -7,7 +7,7 @@ const ctx = { repo: REPO, proyecto: PROYECTO };
 const enRepo = { ambito: "repo" as const, ambitoRef: REPO };
 const enProyecto = { ambito: "proyecto" as const, ambitoRef: PROYECTO };
 
-describe("filtros por defecto, marcas y filtros explícitos (AC-08, AC-09)", () => {
+describe("filtros por defecto, marcas y filtros explícitos", () => {
   let t: ReturnType<typeof storeTemporal>;
   let buscador: Buscador;
   const ids: Record<string, number> = {};

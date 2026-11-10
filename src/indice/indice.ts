@@ -1,6 +1,6 @@
 import type { Entrada } from "../domain/types.js";
 
-// Índice de inicio de sesión (T2.1, AC-14): compacto, con tope en tokens estimados como
+// Índice de inicio de sesión: compacto, con tope en tokens estimados como
 // caracteres / 4, del ámbito actual más el global, en tres bloques y una línea por entrada.
 
 export const ENCABEZADO_INDICE = [

@@ -2,14 +2,14 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ambitoPorDefecto, normalizarRemoto, resolverContexto } from "../../src/context.js";
+import { MARCADOR_PROYECTO, ambitoPorDefecto, normalizarRemoto, resolverContexto } from "../../src/context.js";
 import { REPO, dirTemporal, storeTemporal } from "../helpers/temp.js";
 
 function git(cwd: string, ...args: string[]) {
   execFileSync("git", args, { cwd, stdio: "ignore" });
 }
 
-describe("resolución de ámbito desde el contexto (AC-19)", () => {
+describe("resolución de ámbito desde el contexto", () => {
   let base: string;
   let limpiar: () => void;
   beforeEach(() => {
@@ -38,30 +38,47 @@ describe("resolución de ámbito desde el contexto (AC-19)", () => {
     expect(resolverContexto(sinRemoto).repo).toBe(`ruta:${sinRemoto}`);
   });
 
-  it("el proyecto es el hub de Workline más cercano o la carpeta declarada más cercana", () => {
-    const hub = join(base, "hub");
-    mkdirSync(join(hub, ".workflow"), { recursive: true });
-    writeFileSync(join(hub, ".workflow", "workline.json"), "{}");
-    const dentro = join(hub, "docs", "plans");
+  it("el proyecto lo declara el marcador más cercano o la config, y se identifica por su nombre", () => {
+    const notas = join(base, "notas");
+    const dentro = join(notas, "semana", "lunes");
     mkdirSync(dentro, { recursive: true });
-    expect(resolverContexto(dentro).proyecto).toBe(`proyecto:${hub}`);
+    writeFileSync(join(notas, MARCADOR_PROYECTO), JSON.stringify({ proyecto: "tienda" }));
+    expect(resolverContexto(dentro).proyecto).toBe("proyecto:tienda");
 
-    const declarada = join(hub, "docs");
-    expect(resolverContexto(dentro, { proyectos: [declarada] }).proyecto).toBe(`proyecto:${declarada}`);
+    // Un repo de código en otra carpeta, declarado en la config con el mismo nombre: mismo proyecto.
+    const repo = join(base, "codigo", "api");
+    mkdirSync(join(repo, "src"), { recursive: true });
+    git(repo, "init", "-q");
+    expect(resolverContexto(join(repo, "src"), { proyectos: { tienda: [join(base, "codigo")] } })).toEqual({
+      repo: `ruta:${repo}`,
+      proyecto: "proyecto:tienda",
+    });
+
+    // Gana la declaración más cercana: un marcador anidado pisa al de arriba y a la config.
+    const anidada = join(notas, "semana");
+    writeFileSync(join(anidada, MARCADOR_PROYECTO), JSON.stringify({ proyecto: "otro" }));
+    expect(resolverContexto(dentro, { proyectos: { tienda: [notas] } }).proyecto).toBe("proyecto:otro");
+    expect(resolverContexto(dentro, { proyectos: { tercero: [dentro] } }).proyecto).toBe("proyecto:tercero");
 
     const suelta = join(base, "suelta");
     mkdirSync(suelta);
     expect(resolverContexto(suelta)).toEqual({ repo: null, proyecto: null });
   });
 
-  it("una entrada nueva nace en el proyecto, si no en el repo, si no en global (S-12)", () => {
+  it("un marcador sin nombre es un error que nombra el archivo", () => {
+    writeFileSync(join(base, MARCADOR_PROYECTO), "{}");
+    expect(() => resolverContexto(base)).toThrow(/marcador de proyecto inválido/);
+  });
+
+  it("una entrada nueva nace en el proyecto, si no en el repo, si no en global; la preferencia, en global", () => {
     expect(ambitoPorDefecto({ repo: "r", proyecto: "p" })).toEqual({ ambito: "proyecto", ambitoRef: "p" });
     expect(ambitoPorDefecto({ repo: "r", proyecto: null })).toEqual({ ambito: "repo", ambitoRef: "r" });
     expect(ambitoPorDefecto({ repo: null, proyecto: null })).toEqual({ ambito: "global", ambitoRef: null });
+    expect(ambitoPorDefecto({ repo: "r", proyecto: "p" }, "preferencia")).toEqual({ ambito: "global", ambitoRef: null });
   });
 });
 
-describe("ámbitos en el almacén (AC-19)", () => {
+describe("ámbitos en el almacén", () => {
   let t: ReturnType<typeof storeTemporal>;
   beforeEach(() => {
     t = storeTemporal();
@@ -89,7 +106,7 @@ describe("ámbitos en el almacén (AC-19)", () => {
   });
 });
 
-describe("relaciones por id (AC-31)", () => {
+describe("relaciones por id", () => {
   let t: ReturnType<typeof storeTemporal>;
   beforeEach(() => {
     t = storeTemporal();

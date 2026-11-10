@@ -1,4 +1,4 @@
-// Redacción de secretos con formato conocido antes de guardar (AC-26). Devuelve qué tipos se
+// Redacción de secretos con formato conocido antes de guardar. Devuelve qué tipos se
 // redactaron, nunca el valor. La lista es configurable: se puede pasar otra a `redactar`.
 
 export interface PatronSecreto {

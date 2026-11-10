@@ -7,7 +7,7 @@ import { AMBITOS, TIPOS, VALIDACIONES } from "../domain/types.js";
 import type { ContextoCompleto } from "../exclusion.js";
 import { version } from "../version.js";
 
-// Servidor MCP por stdio (T3.3): declara las once herramientas memory_* y traduce cada llamada a
+// Servidor MCP por stdio: declara las once herramientas memory_* y traduce cada llamada a
 // la API del servicio. No aplica reglas propias: las reglas viven una sola vez, en el servicio.
 
 export const HERRAMIENTAS = [
@@ -43,7 +43,7 @@ const borrador = {
 
 export function crearServidorMcp(cliente: ClienteServicio, contexto: ContextoCompleto): McpServer {
   const server = new McpServer({ name: "agent-memory", version: version() });
-  // Cada llamada lleva el contexto: el servicio rechaza todo en un repo excluido (AC-20).
+  // Cada llamada lleva el contexto: el servicio rechaza todo en un repo excluido.
   const servicio = (op: string, cuerpo: object) => cliente.llamar(op, { ...cuerpo, contexto });
   const llamar = (op: string, cuerpo: object) => ejecutar(() => servicio(op, cuerpo));
   const conFiltros = (a: Record<string, unknown>) => {

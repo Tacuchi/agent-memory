@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { getLoadablePath } from "sqlite-vec";
 
 /**
- * Driver elegido por la prueba de T1.1 (tests/spike/driver.test.ts): `node:sqlite`.
+ * Driver elegido por la prueba comparativa de drivers (tests/spike/driver.test.ts): `node:sqlite`.
  * Carga sqlite-vec 0.1.9, trae FTS5 y revierte juntas la fila y su vector; gana sobre
  * better-sqlite3 porque no agrega ninguna dependencia nativa propia.
  */

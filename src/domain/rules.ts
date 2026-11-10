@@ -32,7 +32,7 @@ export function validarTexto(campo: string, valor: string): string {
 
 export interface OrigenCambio {
   actor: Actor;
-  /** La persona confirmó en la conversación el borrador exacto (huella verificada, AC-16). */
+  /** La persona confirmó en la conversación el borrador exacto (huella verificada). */
   confirmado?: boolean;
 }
 
@@ -42,7 +42,7 @@ export interface EstadoValidacion {
 }
 
 /**
- * Validación con la que nace una entrada (AC-07, AC-16, AC-24): proyecto sin validación; el
+ * Validación con la que nace una entrada: proyecto sin validación; el
  * borrador confirmado nace validado por conversación; lo que crea la persona nace validado por la
  * web; lo que crea el agente por su cuenta nace pendiente.
  */
@@ -60,7 +60,7 @@ export function hoy(ahora: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-/** Vencida desde el día de su vigencia: caducar «hoy» la saca ese mismo día (AC-24). */
+/** Vencida desde el día de su vigencia: caducar «hoy» la saca ese mismo día. */
 export function estaVencida(entrada: Pick<Entrada, "vigenciaHasta">, ahora: Date): boolean {
   return entrada.vigenciaHasta !== null && entrada.vigenciaHasta <= hoy(ahora);
 }
@@ -71,7 +71,7 @@ export interface CambiosContenido {
 }
 
 /**
- * Edición en sitio (AC-23, AC-24, S-10): el proyecto no toca la validación; la persona conserva
+ * Edición en sitio: el proyecto no toca la validación; la persona conserva
  * el estado; el agente devuelve a pendiente lo validado o rechazado salvo borrador confirmado.
  */
 export function aplicarEdicion(entrada: Entrada, cambios: CambiosContenido, origen: OrigenCambio, ahora: Date): Entrada {
@@ -102,7 +102,7 @@ function validacionTrasCambio(entrada: Entrada, origen: OrigenCambio, ahora: Dat
   return { validacion: "pendiente", validacionVia: null, motivoRechazo: null, validadaEn: null };
 }
 
-/** Aprobar es un acto explícito de la persona por una vía registrada (AC-07). */
+/** Aprobar es un acto explícito de la persona por una vía registrada. */
 export function aprobar(entrada: Entrada, via: Via, ahora: Date): Entrada {
   exigirConocimiento(entrada, "aprobar");
   exigirActiva(entrada, "aprobar");
@@ -119,7 +119,7 @@ export function aprobar(entrada: Entrada, via: Via, ahora: Date): Entrada {
   };
 }
 
-/** Un rechazo sin motivo no se registra y la entrada sigue como estaba (AC-06). */
+/** Un rechazo sin motivo no se registra y la entrada sigue como estaba. */
 export function rechazar(entrada: Entrada, motivo: string | undefined, ahora: Date): Entrada {
   exigirConocimiento(entrada, "rechazar");
   const limpio = (motivo ?? "").trim();
@@ -140,11 +140,11 @@ export interface OpcionesCaducar {
   actor: Actor;
   /** Fecha elegida `YYYY-MM-DD`; por defecto, hoy. */
   fecha?: string;
-  /** Declarar cerrado el trabajo de una entrada de proyecto: vence hoy (AC-24). */
+  /** Declarar cerrado el trabajo de una entrada de proyecto: vence hoy. */
   cerrarTrabajo?: boolean;
 }
 
-/** Caducar surte efecto de inmediato y queda registrado para poder revertirlo (AC-23). */
+/** Caducar surte efecto de inmediato y queda registrado para poder revertirlo. */
 export function caducar(entrada: Entrada, opciones: OpcionesCaducar, ahora: Date): Entrada {
   exigirActiva(entrada, "caducar");
   if (opciones.cerrarTrabajo && entrada.tipo !== "proyecto") {
@@ -164,7 +164,7 @@ export function caducar(entrada: Entrada, opciones: OpcionesCaducar, ahora: Date
   };
 }
 
-/** Revierte la última caducidad registrada, devolviendo la vigencia que tenía (AC-23). */
+/** Revierte la última caducidad registrada, devolviendo la vigencia que tenía. */
 export function revertirCaducidad(entrada: Entrada, ahora: Date): Entrada {
   if (!entrada.caducidad) {
     throw new ReglaError("sin_caducidad", `la entrada ${entrada.id} no tiene una caducidad que revertir`);
@@ -190,7 +190,7 @@ export function cambiarAmbito(entrada: Entrada, ambito: string, ambitoRef: strin
   return { ...entrada, ambito: valido, ambitoRef: ref, actualizadaEn: ahora.toISOString() };
 }
 
-/** Un reemplazo surte efecto cuando la entrada nueva cuenta: validada, o de proyecto (AC-08, AC-23). */
+/** Un reemplazo surte efecto cuando la entrada nueva cuenta: validada, o de proyecto. */
 export function reemplazoSurteEfecto(nueva: Entrada): boolean {
   if (nueva.reemplazaA === null || nueva.vida !== "activa") return false;
   return nueva.validacion === "validada" || !esConocimiento(nueva.tipo);

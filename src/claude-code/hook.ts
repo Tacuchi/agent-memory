@@ -5,7 +5,7 @@ import { contextoExcluido } from "../exclusion.js";
 import type { Indice } from "../indice/indice.js";
 import { arrancarSeparado } from "../service/daemon.js";
 
-// Hook `SessionStart` de Claude Code (T2.2, AC-14, AC-29): imprime el índice del contexto de la
+// Hook `SessionStart` de Claude Code: imprime el índice del contexto de la
 // sesión, o una línea de aviso. Nunca bloquea ni falla: termina con éxito pase lo que pase.
 
 export interface EntradaHook {

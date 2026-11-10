@@ -16,7 +16,7 @@ import {
 import { clausulaFiltros, type Filtros } from "./filters.js";
 import { COLUMNAS_VERSIONADAS, aParametros, desdeFila, instantanea, type FilaEntrada } from "./rows.js";
 
-/** Calcula el embedding de un texto. Lo implementa la búsqueda (F2); sin él, el vector queda faltante. */
+/** Calcula el embedding de un texto. Lo implementa la búsqueda; sin él, el vector queda faltante. */
 export interface Embedder {
   readonly modelId: string;
   readonly dims: number;
@@ -35,7 +35,7 @@ export interface NuevaEntrada {
   contenido: string;
   ambito: Ambito;
   ambitoRef: string | null;
-  /** Entrada que esta reemplaza (AC-08); con el agente y lo validado, solo al aprobarse (AC-23). */
+  /** Entrada que esta reemplaza; con el agente y lo validado, solo al aprobarse. */
   reemplazaA?: number | null;
   relacionadas?: number[];
 }
@@ -56,7 +56,7 @@ export interface Origen {
 
 export interface ResultadoEscritura {
   entrada: Entrada;
-  /** Tipos de secreto redactados antes de guardar, sin el valor (AC-26). */
+  /** Tipos de secreto redactados antes de guardar, sin el valor. */
   redactados: string[];
 }
 
@@ -66,7 +66,7 @@ export interface Lectura {
 }
 
 /**
- * Almacén de la memoria sobre un único archivo SQLite (AC-01): entradas, revisiones, relaciones,
+ * Almacén de la memoria sobre un único archivo SQLite: entradas, revisiones, relaciones,
  * FTS5 por triggers y la proyección vectorial en la misma transacción que la entrada.
  */
 export class MemoryStore {
@@ -179,7 +179,7 @@ export class MemoryStore {
     return { entrada, redactados: unir(titulo?.redactados ?? [], contenido?.redactados ?? []) };
   }
 
-  /** Restaurar crea una revisión nueva con el contenido de la elegida; no borra ninguna (AC-05, S-05). */
+  /** Restaurar crea una revisión nueva con el contenido de la elegida; no borra ninguna. */
   async restaurar(id: number, numero: number, origen: Origen): Promise<ResultadoEscritura> {
     const revision = this.revisiones(id).find((r) => r.numero === numero);
     if (!revision) throw new ReglaError("revision_no_encontrada", `la entrada ${id} no tiene la revisión ${numero}`);
@@ -202,7 +202,7 @@ export class MemoryStore {
   }
 
   /**
-   * Fusión hecha por la persona (AC-12): la resultante nace validada por la web (o sin validación si
+   * Fusión hecha por la persona: la resultante nace validada por la web (o sin validación si
    * es de proyecto) y cada original queda reemplazada por ella, relacionada y con su historia intacta.
    */
   async fusionar(ids: readonly number[], fusion: Fusion): Promise<ResultadoEscritura> {
@@ -308,7 +308,7 @@ export class MemoryStore {
   }
 
   /**
-   * La persona confirma en la vista de revisión que la entrada sigue vigente (AC-25, S-11): queda la
+   * La persona confirma en la vista de revisión que la entrada sigue vigente: queda la
    * fecha en la entrada y una revisión, sin cambiar contenido ni estados.
    */
   confirmarVigencia(id: number): Entrada {
@@ -325,7 +325,7 @@ export class MemoryStore {
   }
 
   /**
-   * Vista de revisión (AC-25): activas y vigentes sin uso hace `diasSinUso` o sin verificar hace
+   * Vista de revisión: activas y vigentes sin uso hace `diasSinUso` o sin verificar hace
    * `diasSinVerificar`. Solo lista: nada vence por antigüedad.
    */
   paraRevisar(umbrales: Umbrales): { entrada: Entrada; motivos: MotivoRevision[] }[] {
@@ -344,7 +344,7 @@ export class MemoryStore {
     return r.sort((a, b) => a.entrada.id - b.entrada.id);
   }
 
-  /** Uso = el agente la lee en detalle o la recibe en una búsqueda (S-11). */
+  /** Uso = el agente la lee en detalle o la recibe en una búsqueda. */
   registrarUso(ids: readonly number[]): void {
     if (!ids.length) return;
     const marca = this.reloj().toISOString();
@@ -374,7 +374,7 @@ export class MemoryStore {
     return filas.map(desdeFila);
   }
 
-  /** Bandeja: el conocimiento pendiente y activo, con el reemplazo que propone (AC-07, AC-23). */
+  /** Bandeja: el conocimiento pendiente y activo, con el reemplazo que propone. */
   pendientes(filtros: Pick<Filtros, "contexto" | "todosLosAmbitos"> = {}): Entrada[] {
     return this.listar({ ...filtros, validacion: ["pendiente"], incluirVencidas: true }, 500).filter(
       (e) => e.validacion === "pendiente",
@@ -396,7 +396,7 @@ export class MemoryStore {
     }));
   }
 
-  /** Relaciones en ambos sentidos con el estado de cada entrada relacionada (AC-31). */
+  /** Relaciones en ambos sentidos con el estado de cada entrada relacionada. */
   relaciones(id: number): Relacion[] {
     const filas = this.db
       .prepare(
@@ -419,7 +419,7 @@ export class MemoryStore {
 
   // ── Proyección vectorial ─────────────────────────────────────────────────────
 
-  /** Ids cuyo vector falta o es de otro modelo: los que hay que regenerar al arrancar (T2.3). */
+  /** Ids cuyo vector falta o es de otro modelo: los que hay que regenerar al arrancar. */
   vectoresPendientes(): number[] {
     const modelo = this.embedder?.modelId ?? null;
     const filas = this.db
@@ -459,7 +459,7 @@ export class MemoryStore {
       }
       return vector;
     } catch {
-      // Sin modelo la entrada se guarda igual con su vector marcado como faltante (T2.3).
+      // Sin modelo la entrada se guarda igual con su vector marcado como faltante.
       return null;
     }
   }
@@ -509,7 +509,7 @@ export class MemoryStore {
       .run(entrada.id, n, accion, actor, JSON.stringify(instantanea(entrada)), entrada.actualizadaEn);
   }
 
-  /** Si la entrada ya cuenta, la que reemplaza queda reemplazada (AC-08). */
+  /** Si la entrada ya cuenta, la que reemplaza queda reemplazada. */
   private aplicarReemplazo(entrada: Entrada, ahora: Date, actor: Actor): void {
     if (!reglas.reemplazoSurteEfecto(entrada) || entrada.reemplazaA === null) return;
     const original = this.obtener(entrada.reemplazaA);

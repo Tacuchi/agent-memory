@@ -10,7 +10,7 @@ import { asegurarBuild, servicioDePrueba } from "../helpers/servicio.js";
 import { dirTemporal, storeTemporal } from "../helpers/temp.js";
 import { comoPersona, sesionWeb } from "../helpers/web.js";
 
-// AC-22: un .md por entrada, legible sin el servicio, con el contenido y sus estados en la
+// Un .md por entrada, legible sin el servicio, con el contenido y sus estados en la
 // cabecera. Por defecto las activas; con la opción completa, todas con su historia.
 
 let t: ReturnType<typeof storeTemporal>;

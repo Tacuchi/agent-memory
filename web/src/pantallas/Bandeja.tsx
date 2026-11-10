@@ -3,7 +3,7 @@ import { mensajeError, type Cliente, type Pendiente } from "../api";
 import type { Navegar } from "../App";
 import { Aviso, fecha } from "./comunes";
 
-/** Bandeja de pendientes (AC-11): aprobar cada una, o rechazarla con un motivo obligatorio. */
+/** Bandeja de pendientes: aprobar cada una, o rechazarla con un motivo obligatorio. */
 export function Bandeja({ cliente, navegar }: { cliente: Cliente; navegar: Navegar }) {
   const [pendientes, setPendientes] = useState<Pendiente[] | null>(null);
   const [error, setError] = useState<string | null>(null);

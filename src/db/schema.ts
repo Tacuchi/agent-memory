@@ -1,6 +1,6 @@
 import { transaction, type Database } from "./driver.js";
 
-/** Dimensiones de la proyección vectorial (modelo multilingüe local, plan 001). */
+/** Dimensiones de la proyección vectorial (modelo multilingüe local). */
 export const DIMENSIONES = 384;
 
 // Esquema versionado con `PRAGMA user_version`. Cada migración corre una sola vez, en orden y
@@ -81,7 +81,7 @@ const MIGRACIONES: readonly string[] = [
     DELETE FROM entradas_vec WHERE rowid = old.id;
   END;
   `,
-  // Plan 003: fecha en que la persona confirmó que la entrada sigue vigente (vista de revisión, AC-25).
+  // Fecha en que la persona confirmó que la entrada sigue vigente (vista de revisión).
   `ALTER TABLE entradas ADD COLUMN verificada_en TEXT;`,
 ];
 

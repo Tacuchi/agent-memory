@@ -3,7 +3,7 @@ import { AMBITOS, TIPOS, mensajeError, type Cliente, type Entrada } from "../api
 import type { Navegar } from "../App";
 import { Aviso, Estados } from "./comunes";
 
-/** Fusión (AC-12): la resultante nace validada por la web y las originales quedan reemplazadas. */
+/** Fusión: la resultante nace validada por la web y las originales quedan reemplazadas. */
 export function Fusionar({ ids, cliente, navegar }: { ids: number[]; cliente: Cliente; navegar: Navegar }) {
   const [originales, setOriginales] = useState<Entrada[]>([]);
   const [titulo, setTitulo] = useState("");

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { mensajeError, type Cliente } from "../api";
 import { Aviso } from "./comunes";
 
-/** Exportación desde la web (AC-22): la escribe el servicio en una carpeta nueva con fecha. */
+/** Exportación desde la web: la escribe el servicio en una carpeta nueva con fecha. */
 export function Exportar({ cliente }: { cliente: Cliente }) {
   const [completa, setCompleta] = useState(false);
   const [hecho, setHecho] = useState<string | null>(null);

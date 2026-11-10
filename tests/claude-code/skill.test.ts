@@ -5,7 +5,7 @@ import { ENCABEZADO_INDICE } from "../../src/indice/indice.js";
 import { correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild } from "../helpers/servicio.js";
 
-// T2.3 (AC-30): la skill instalada trae cada regla de uso que la memoria nativa pierde al apagarse,
+// La skill instalada trae cada regla de uso que la memoria nativa pierde al apagarse,
 // y el encabezado del índice las resume.
 
 let e: EntornoCli;
@@ -35,7 +35,7 @@ const REGLAS: [string, RegExp[]][] = [
   ["aprobar solo a pedido", [/`memory_approve` solo cuando la persona lo pide/]],
 ];
 
-describe("skill agent-memory (AC-30)", () => {
+describe("skill agent-memory", () => {
   it("tiene frontmatter con nombre y descripción", () => {
     expect(skill).toMatch(/^---\nname: agent-memory\ndescription: .+\n---\n/);
   });

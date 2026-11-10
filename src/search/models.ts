@@ -11,7 +11,7 @@ export interface ModeloEmbeddings {
   prefijoPasaje: string;
 }
 
-/** Candidatos medidos en T2.2 con `scripts/medir-modelos.ts` sobre `tests/fixtures/consultas-es.json`. */
+/** Candidatos medidos con `src/medir-modelos.ts` sobre `tests/fixtures/consultas-es.json`. */
 export const CANDIDATOS: readonly ModeloEmbeddings[] = [
   {
     id: "Xenova/multilingual-e5-small",
@@ -40,7 +40,7 @@ export const CANDIDATOS: readonly ModeloEmbeddings[] = [
 ];
 
 /**
- * Modelo fijado por la medición de T2.2: el único candidato que pone cada paráfrasis entre los
+ * Modelo fijado por la medición de candidatos: el único candidato que pone cada paráfrasis entre los
  * tres primeros y cada nombre exacto primero, y además el más liviano (~121 MB en q8).
  */
 export const MODELO_ID_FIJADO = "onnx-community/granite-embedding-97m-multilingual-r2-ONNX";

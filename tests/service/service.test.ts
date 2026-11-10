@@ -10,7 +10,7 @@ import { CLI, asegurarBuild, crudo, puertoLibre, servicioDePrueba, type Servicio
 
 const ctx = { repo: "github.com/ejemplo/sintetico", proyecto: null };
 
-describe("acceso al servicio local (AC-21)", () => {
+describe("acceso al servicio local", () => {
   let s: ServicioDePrueba;
   beforeEach(async () => {
     s = await servicioDePrueba();
@@ -103,7 +103,7 @@ describe("acceso al servicio local (AC-21)", () => {
   });
 });
 
-describe("API de la memoria (T3.2)", () => {
+describe("API de la memoria", () => {
   let s: ServicioDePrueba;
   beforeEach(async () => {
     s = await servicioDePrueba();
@@ -117,7 +117,7 @@ describe("API de la memoria (T3.2)", () => {
     return { cookie: String(r.headers["set-cookie"]).split(";")[0]! };
   }
 
-  it("AC-19: cambia el ámbito por la API (solo la persona) y la búsqueda filtra por ámbito", async () => {
+  it("cambia el ámbito por la API (solo la persona) y la búsqueda filtra por ámbito", async () => {
     const { datos } = await s.api("crear", { tipo: "leccion", titulo: "Lección de repo", contenido: "texto sobre índices", contexto: ctx });
     expect(datos.entrada).toMatchObject({ ambito: "repo", ambito_ref: ctx.repo, validacion: "pendiente" });
     const id = datos.entrada.id as number;
@@ -135,7 +135,7 @@ describe("API de la memoria (T3.2)", () => {
     expect(soloGlobal.datos.resultados.map((r: { id: number }) => r.id)).toEqual([id]);
   });
 
-  it("AC-23: el agente caduca de inmediato y la persona lo revierte por la API", async () => {
+  it("el agente caduca de inmediato y la persona lo revierte por la API", async () => {
     const persona = await sesionPersona();
     const { datos } = await s.api("crear", { tipo: "convencion", titulo: "Convención", contenido: "usar comillas dobles", contexto: ctx }, persona);
     const id = datos.entrada.id as number;
@@ -171,7 +171,7 @@ describe("API de la memoria (T3.2)", () => {
     expect(salud.datos).toMatchObject({ ok: true, modelo: { modelId: "falso/bolsa-de-palabras", dims: 384 } });
   });
 
-  it("AC-01: API y almacén comparten el único memoria.db del directorio de datos", async () => {
+  it("API y almacén comparten el único memoria.db del directorio de datos", async () => {
     const { datos } = await s.api("crear", { tipo: "preferencia", titulo: "Compartida", contenido: "una sola base", ambito: "global" });
     const otro = MemoryStore.abrir(s.config.dbPath);
     try {

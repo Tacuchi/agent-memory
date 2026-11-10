@@ -12,7 +12,7 @@ export interface EmbedderConsulta {
 
 export type Modo = "hibrido" | "texto";
 
-/** Cómo se presenta una entrada al agente por defecto (AC-09). */
+/** Cómo se presenta una entrada al agente por defecto. */
 export type Marca = "validada" | "pendiente" | "rechazada" | "estado de trabajo";
 
 export interface Resultado {
@@ -49,7 +49,7 @@ interface AciertoTexto {
 const POOL_VECTOR = 200;
 
 /**
- * Búsqueda híbrida (AC-04, AC-08, AC-09): FTS5 y KNN fusionados por rango recíproco, con los
+ * Búsqueda híbrida: FTS5 y KNN fusionados por rango recíproco, con los
  * filtros por defecto. Sin vector cae a texto y lo avisa; si falla el texto, error, nunca vacío.
  */
 export class Buscador {

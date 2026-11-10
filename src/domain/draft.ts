@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 /**
- * Huella de un borrador (AC-16): sha256 del contenido canónico ya redactado. El servicio la
+ * Huella de un borrador: sha256 del contenido canónico ya redactado. El servicio la
  * recalcula al confirmar, así que un cambio en cualquier campo exige confirmar de nuevo. No
  * guarda estado: lo que ata la confirmación al texto es la huella misma.
  */

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { escribirArchivoConfig, homeDatos, leerArchivoConfig } from "../config.js";
 import { argumentosNode } from "../service/daemon.js";
 
-// Conexión con Claude Code (T2.5, AC-13), aislada en este módulo: MCP con `claude mcp add`, hook
+// Conexión con Claude Code, aislada en este módulo: MCP con `claude mcp add`, hook
 // `SessionStart` en settings.json y la skill. Idempotente; la desinstalación quita exactamente eso.
 
 export const NOMBRE_MCP = "agent-memory";

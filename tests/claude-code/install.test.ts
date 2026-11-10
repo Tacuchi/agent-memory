@@ -7,7 +7,7 @@ import { HERRAMIENTAS } from "../../src/mcp/server.js";
 import { clienteMcp, correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild } from "../helpers/servicio.js";
 
-// T2.5 (AC-13): instalar y desinstalar MCP, hook y skill con un `claude` falso y un HOME temporal.
+// Instalar y desinstalar MCP, hook y skill con un `claude` falso y un HOME temporal.
 // Repetir no duplica nada y desinstalar deja settings.json byte a byte como estaba.
 
 let e: EntornoCli;

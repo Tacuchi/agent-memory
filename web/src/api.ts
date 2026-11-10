@@ -1,4 +1,4 @@
-// La web usa solo la API del servicio (plan 003): ninguna otra copia de los datos. La cookie de
+// La web usa solo la API del servicio: ninguna otra copia de los datos. La cookie de
 // sesión HttpOnly la manda el navegador; la web nunca ve el token.
 
 export type Cliente = <T = unknown>(operacion: string, cuerpo?: object) => Promise<T>;

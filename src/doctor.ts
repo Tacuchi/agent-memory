@@ -6,7 +6,7 @@ import { TransformersEmbedder } from "./search/embedder.js";
 import { cacheModelos, modeloFijado } from "./search/models.js";
 import { leerPid, salud } from "./service/daemon.js";
 
-// `agent-memory doctor` (T1.3): cada revisión da un hallazgo y, si falla, su arreglo.
+// `agent-memory doctor`: cada revisión da un hallazgo y, si falla, su arreglo.
 
 export type Nivel = "ok" | "aviso" | "falla";
 

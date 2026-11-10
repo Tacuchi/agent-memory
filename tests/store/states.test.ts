@@ -14,7 +14,7 @@ describe("estados de vida y validación", () => {
   });
   afterEach(() => t.cerrar());
 
-  it("AC-17: acepta los seis tipos y rechaza cualquier otro", async () => {
+  it("acepta los seis tipos y rechaza cualquier otro", async () => {
     for (const tipo of TIPOS) {
       const { entrada } = await t.store.crear({ tipo, titulo: `t ${tipo}`, contenido: "c", ...enRepo }, agente);
       expect(entrada.tipo).toBe(tipo);
@@ -25,7 +25,7 @@ describe("estados de vida y validación", () => {
     expect(t.store.listar({ todosLosAmbitos: true }, 100)).toHaveLength(TIPOS.length);
   });
 
-  it("AC-06/AC-07: lo que crea el agente nace activo y pendiente; proyecto no tiene validación", async () => {
+  it("lo que crea el agente nace activo y pendiente; proyecto no tiene validación", async () => {
     const { entrada: leccion } = await t.store.crear({ tipo: "leccion", titulo: "l", contenido: "c", ...enRepo }, agente);
     expect(leccion).toMatchObject({ vida: "activa", vigenciaHasta: null, validacion: "pendiente", validacionVia: null });
     const { entrada: proyecto } = await t.store.crear({ tipo: "proyecto", titulo: "p", contenido: "c", ...enRepo }, agente);
@@ -46,7 +46,7 @@ describe("estados de vida y validación", () => {
     expect(t.store.listar({ todosLosAmbitos: true, validacion: ["rechazada"] }).map((e) => e.id)).toEqual([entrada.id]);
   });
 
-  it("AC-07: las tres vías de validación quedan registradas", async () => {
+  it("las tres vías de validación quedan registradas", async () => {
     const a = (await t.store.crear({ tipo: "convencion", titulo: "a", contenido: "c", ...enRepo }, agente)).entrada;
     const b = (await t.store.crear({ tipo: "convencion", titulo: "b", contenido: "c", ...enRepo }, agente)).entrada;
     const c = (await t.store.crear({ tipo: "convencion", titulo: "c", contenido: "c", ...enRepo }, { ...agente, confirmado: true }))
@@ -58,7 +58,7 @@ describe("estados de vida y validación", () => {
     expect(t.store.pendientes()).toHaveLength(0);
   });
 
-  it("AC-06: la vigencia futura no oculta la entrada; vencida sale de lo que se lista por defecto", async () => {
+  it("la vigencia futura no oculta la entrada; vencida sale de lo que se lista por defecto", async () => {
     const { entrada } = await t.store.crear({ tipo: "referencia", titulo: "r", contenido: "c", ...enRepo }, persona);
     t.store.caducar(entrada.id, { actor: "persona", fecha: "2026-12-31" });
     expect(t.store.listar({ todosLosAmbitos: true }).map((e) => e.id)).toContain(entrada.id);
@@ -68,7 +68,7 @@ describe("estados de vida y validación", () => {
   });
 });
 
-describe("cambios del agente sobre lo validado (AC-23)", () => {
+describe("cambios del agente sobre lo validado", () => {
   let t: Ctx;
   beforeEach(() => {
     t = storeTemporal();
@@ -96,7 +96,7 @@ describe("cambios del agente sobre lo validado (AC-23)", () => {
     expect(entrada).toMatchObject({ validacion: "validada", validacionVia: "conversacion" });
   });
 
-  it("la persona edita sin cambiar el estado de validación (S-10)", async () => {
+  it("la persona edita sin cambiar el estado de validación", async () => {
     const e = await validada();
     const { entrada } = await t.store.editar(e.id, { titulo: "Convención de nombres de archivo" }, persona);
     expect(entrada.validacion).toBe("validada");
@@ -137,7 +137,7 @@ describe("cambios del agente sobre lo validado (AC-23)", () => {
   });
 });
 
-describe("entradas de proyecto (AC-24)", () => {
+describe("entradas de proyecto", () => {
   let t: Ctx;
   beforeEach(() => {
     t = storeTemporal();
@@ -146,10 +146,10 @@ describe("entradas de proyecto (AC-24)", () => {
 
   it("se actualizan en sitio con revisiones y nunca pasan por la bandeja", async () => {
     const enProyecto = { ambito: "proyecto" as const, ambitoRef: PROYECTO };
-    const { entrada } = await t.store.crear({ tipo: "proyecto", titulo: "Estado del plan 001", contenido: "F1 en curso", ...enProyecto }, agente);
-    await t.store.editar(entrada.id, { contenido: "F2 en curso" }, agente);
+    const { entrada } = await t.store.crear({ tipo: "proyecto", titulo: "Estado del trabajo", contenido: "Primera etapa en curso", ...enProyecto }, agente);
+    await t.store.editar(entrada.id, { contenido: "Segunda etapa en curso" }, agente);
     const actual = t.store.obtener(entrada.id);
-    expect(actual).toMatchObject({ contenido: "F2 en curso", validacion: null });
+    expect(actual).toMatchObject({ contenido: "Segunda etapa en curso", validacion: null });
     expect(t.store.revisiones(entrada.id)).toHaveLength(2);
     expect(t.store.pendientes()).toHaveLength(0);
     expect(() => t.store.aprobar(entrada.id, "mcp")).toThrow(/proyecto/);

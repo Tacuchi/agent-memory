@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { openDatabase, transaction, vectorBlob, type Database } from "../../src/db/driver.js";
 
-// Guarda de regresión de la decisión de T1.1: el driver elegido (node:sqlite) tiene que
+// Guarda de regresión de la elección del driver: el driver elegido (node:sqlite) tiene que
 // seguir cargando sqlite-vec 0.1.9, traer FTS5 y revertir juntas la fila y su vector.
 describe("driver SQLite elegido (node:sqlite)", () => {
   let dir: string;

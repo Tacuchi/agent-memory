@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { montarWeb } from "../web/ayuda";
 
-// AC-11 y AC-12 en la interfaz: la bandeja exige el motivo, la fusión y la caducidad cambian la
+// Gobernanza en la interfaz: la bandeja exige el motivo, la fusión y la caducidad cambian la
 // base por la API y la historia queda.
 
 let w: ReturnType<typeof montarWeb>;

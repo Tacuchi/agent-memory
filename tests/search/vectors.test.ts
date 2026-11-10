@@ -12,7 +12,7 @@ function estadoVector(store: MemoryStore, id: number) {
   return { meta, filasVec: n };
 }
 
-describe("proyección vectorial (T2.3)", () => {
+describe("proyección vectorial", () => {
   let limpiar = () => {};
   afterEach(() => limpiar());
 

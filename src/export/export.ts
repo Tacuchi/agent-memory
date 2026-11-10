@@ -4,9 +4,9 @@ import type { Entrada, Revision, Validacion } from "../domain/types.js";
 import { ReglaError } from "../domain/types.js";
 import type { MemoryStore } from "../store/store.js";
 
-// Exportación a markdown (AC-22): un archivo por entrada, legible sin el servicio, con el
+// Exportación a markdown: un archivo por entrada, legible sin el servicio, con el
 // contenido y sus estados en la cabecera YAML. Por defecto, las activas; completa, todas con su
-// historia. Restaurar desde una exportación queda fuera (spec § Scope).
+// historia. Restaurar desde una exportación queda fuera del producto.
 
 export interface OpcionesExportacion {
   /** Todas las entradas (reemplazadas, vencidas y rechazadas incluidas) con sus revisiones. */
@@ -20,7 +20,7 @@ export interface Exportacion {
 }
 
 /**
- * Activas = las que el agente recibe por defecto (AC-09): vida activa, vigentes y no rechazadas.
+ * Activas = las que el agente recibe por defecto: vida activa, vigentes y no rechazadas.
  * La completa no filtra nada.
  */
 export function entradasAExportar(store: MemoryStore, opciones: OpcionesExportacion): Entrada[] {

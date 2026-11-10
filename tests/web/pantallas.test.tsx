@@ -3,8 +3,8 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { montarWeb } from "./ayuda";
 
-// AC-10: la web busca con filtros, ve el detalle con estados, relaciones y revisiones, edita
-// conservando la validación (S-10), restaura una revisión y cambia el ámbito.
+// La web busca con filtros, ve el detalle con estados, relaciones y revisiones, edita
+// conservando la validación, restaura una revisión y cambia el ámbito.
 
 let w: ReturnType<typeof montarWeb>;
 beforeEach(() => {

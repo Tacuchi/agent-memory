@@ -2,8 +2,8 @@ import type { Exclusion } from "./config.js";
 import { normalizarRemoto } from "./context.js";
 import { ReglaError, type Contexto } from "./domain/types.js";
 
-// Exclusión de repos (AC-20). Un patrón es:
-//   - una ruta absoluta (`/…` o `~/…`): prefijo de la carpeta de trabajo, del repo o del proyecto;
+// Exclusión de repos. Un patrón es:
+//   - una ruta absoluta (`/…` o `~/…`): prefijo de la carpeta de trabajo o del repo;
 //   - un remoto u organización con host (`example.org/acme`, `git@example.org:acme/x.git`):
 //     el repo cuyo remoto normalizado es ese o cuelga de él;
 //   - un nombre suelto sin `/` (`acme`): la organización, segundo tramo del remoto normalizado.
@@ -31,7 +31,7 @@ export function coincidePatron(patronCrudo: string, contexto: ContextoCompleto, 
   if (!patron) return false;
   if (patron.startsWith("/") || patron.startsWith("~/")) {
     const prefijo = (patron.startsWith("~/") ? home + patron.slice(1) : patron).replace(/\/+$/, "");
-    const rutas = [contexto.ruta, quitar(contexto.repo, "ruta:"), quitar(contexto.proyecto, "proyecto:")];
+    const rutas = [contexto.ruta, quitar(contexto.repo, "ruta:")];
     return rutas.some((r) => r != null && (r === prefijo || r.startsWith(`${prefijo}/`)));
   }
   const repo = contexto.repo && !contexto.repo.startsWith("ruta:") ? contexto.repo : null;

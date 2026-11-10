@@ -7,10 +7,10 @@ import { leerToken } from "../../src/service/token.js";
 import { EmbedderFalso, modeloReal } from "../helpers/embedders.js";
 import { PROYECTO, REPO, dirTemporal, storeTemporal } from "../helpers/temp.js";
 
-// T2.1 (AC-14): índice con tope, ámbito actual más global, tres bloques y una línea por entrada.
+// Índice con tope, ámbito actual más global, tres bloques y una línea por entrada.
 
 const CONTEXTO = { repo: REPO, proyecto: PROYECTO };
-const OTRO_PROYECTO = "proyecto:/tmp/otro-hub-sintetico";
+const OTRO_PROYECTO = "proyecto:otro-sintetico";
 
 describe("armado del índice", () => {
   let t: ReturnType<typeof storeTemporal>;
@@ -72,7 +72,7 @@ describe("armado del índice", () => {
   });
 });
 
-describe("escenario «índice con tope» (AC-14)", () => {
+describe("escenario «índice con tope»", () => {
   let app: App | null = null;
   let limpiar = () => {};
   afterEach(async () => {
