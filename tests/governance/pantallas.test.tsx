@@ -20,15 +20,17 @@ describe("bandeja", () => {
     w.vista();
     irA("Pendientes");
     const tarjeta = await screen.findByRole("article", { name: `Pendiente #${entrada.id}` });
-    const rechazar = within(tarjeta).getByRole("button", { name: "Rechazar" }) as HTMLButtonElement;
+    fireEvent.click(within(tarjeta).getByRole("button", { name: "Propuesta" }));
+    const previa = within(screen.getByRole("region", { name: "Vista previa" }));
+    const rechazar = previa.getByRole("button", { name: "Rechazar" }) as HTMLButtonElement;
     expect(rechazar.disabled).toBe(true);
-    fireEvent.change(within(tarjeta).getByLabelText("Motivo del rechazo"), { target: { value: "   " } });
+    fireEvent.change(previa.getByLabelText("Motivo del rechazo"), { target: { value: "   " } });
     expect(rechazar.disabled).toBe(true);
     fireEvent.click(rechazar);
     expect(w.llamadas).not.toContain("rechazar");
     expect(w.t.store.obtener(entrada.id).validacion).toBe("pendiente");
 
-    fireEvent.change(within(tarjeta).getByLabelText("Motivo del rechazo"), { target: { value: "no aplica a este repo" } });
+    fireEvent.change(previa.getByLabelText("Motivo del rechazo"), { target: { value: "no aplica a este repo" } });
     expect(rechazar.disabled).toBe(false);
     fireEvent.click(rechazar);
     await screen.findByText(`#${entrada.id} rechazada`);
@@ -44,7 +46,8 @@ describe("bandeja", () => {
     const tarjeta = await screen.findByRole("article", { name: `Pendiente #${nueva}` });
     expect(within(tarjeta).getByText(/Reemplazaría a/)).toBeTruthy();
     expect(within(tarjeta).getByText(`#${original} · Convención vieja`)).toBeTruthy();
-    fireEvent.click(within(tarjeta).getByRole("button", { name: "Aprobar" }));
+    fireEvent.click(within(tarjeta).getByRole("button", { name: "Convención nueva" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "Vista previa" })).getByRole("button", { name: "Aprobar" }));
     await screen.findByText(`#${nueva} aprobada`);
     expect(w.t.store.obtener(nueva)).toMatchObject({ validacion: "validada", validacionVia: "web" });
     expect(w.t.store.obtener(original)).toMatchObject({ vida: "reemplazada", reemplazadaPor: nueva });

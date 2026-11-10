@@ -45,7 +45,7 @@ export function Revision({ cliente, navegar }: { cliente: Cliente; navegar: Nave
   }
 
   return (
-    <section aria-labelledby="titulo-revision">
+    <section className="hoja" aria-labelledby="titulo-revision">
       <h2 id="titulo-revision">Revisión</h2>
       {umbrales && (
         <p className="meta">

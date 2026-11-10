@@ -48,7 +48,7 @@ export function Fusionar({ ids, cliente, navegar }: { ids: number[]; cliente: Cl
   }
 
   return (
-    <section aria-labelledby="titulo-fusionar">
+    <section className="hoja" aria-labelledby="titulo-fusionar">
       <h2 id="titulo-fusionar">Fusionar {ids.length} entradas</h2>
       <Aviso texto={error} />
       <ul className="lista" aria-label="Originales">

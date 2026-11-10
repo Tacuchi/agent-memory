@@ -218,18 +218,39 @@ describe("acciones de la bandeja", () => {
     expect(w.t.store.obtener(original.id).vida).toBe(op === "aprobar" ? "reemplazada" : "activa");
   });
 
-  it("conserva la aprobación y el rechazo individual con motivo obligatorio", async () => {
+  it("conserva la aprobación y el rechazo individual con motivo obligatorio, desde la vista previa", async () => {
     const a = await crear("Aprobar sola");
     const b = await crear("Rechazar sola");
     await abrir();
-    const tarjeta = within(screen.getByRole("article", { name: `Pendiente #${b}` }));
-    expect((tarjeta.getByRole("button", { name: "Rechazar" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(tarjeta.getByLabelText("Motivo del rechazo"), { target: { value: "No aplica" } });
-    fireEvent.click(tarjeta.getByRole("button", { name: "Rechazar" }));
+    const previa = () => within(screen.getByRole("region", { name: "Vista previa" }));
+    fireEvent.click(within(screen.getByRole("article", { name: `Pendiente #${b}` })).getByRole("button", { name: "Rechazar sola" }));
+    expect(previa().getByRole("heading", { name: "Rechazar sola" })).toBeTruthy();
+    expect((previa().getByRole("button", { name: "Rechazar" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(previa().getByLabelText("Motivo del rechazo"), { target: { value: "No aplica" } });
+    fireEvent.click(previa().getByRole("button", { name: "Rechazar" }));
     await esperarResultado(1);
     expect(w.t.store.obtener(b)).toMatchObject({ validacion: "rechazada", motivoRechazo: "No aplica" });
-    fireEvent.click(within(screen.getByRole("article", { name: `Pendiente #${a}` })).getByRole("button", { name: "Aprobar" }));
+    fireEvent.click(within(screen.getByRole("article", { name: `Pendiente #${a}` })).getByRole("button", { name: "Aprobar sola" }));
+    fireEvent.click(previa().getByRole("button", { name: "Aprobar" }));
     await screen.findByText("No hay entradas pendientes.");
     expect(w.t.store.obtener(a).validacion).toBe("validada");
+  });
+
+  it("con el teclado recorre la cola, marca y aprueba la enfocada", async () => {
+    await crear("Primera");
+    await crear("Segunda");
+    await crear("Tercera");
+    await abrir();
+    const filas = screen.getAllByRole("article");
+    const id = (fila: HTMLElement) => Number(fila.getAttribute("aria-label")!.replace("Pendiente #", ""));
+    expect(filas[0]!.getAttribute("aria-current")).toBe("true");
+    fireEvent.keyDown(document.body, { key: "j" });
+    expect(screen.getAllByRole("article")[1]!.getAttribute("aria-current")).toBe("true");
+    fireEvent.keyDown(document.body, { key: "x" });
+    expect((screen.getByRole("checkbox", { name: `Seleccionar #${id(filas[1]!)}` }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.keyDown(document.body, { key: "a" });
+    await esperarResultado(1);
+    expect(w.t.store.obtener(id(filas[1]!)).validacion).toBe("validada");
+    for (const f of [filas[0]!, filas[2]!]) expect(w.t.store.obtener(id(f)).validacion).toBe("pendiente");
   });
 });

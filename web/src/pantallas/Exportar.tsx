@@ -20,7 +20,7 @@ export function Exportar({ cliente }: { cliente: Cliente }) {
   }
 
   return (
-    <section aria-labelledby="titulo-exportar">
+    <section className="hoja" aria-labelledby="titulo-exportar">
       <h2 id="titulo-exportar">Exportar</h2>
       <p>Un archivo markdown por entrada, con sus estados en la cabecera; se lee sin el servicio.</p>
       <label className="casilla">

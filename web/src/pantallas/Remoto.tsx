@@ -76,7 +76,7 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
 
   if (!estado) {
     return (
-      <section aria-labelledby="titulo-remoto">
+      <section className="hoja" aria-labelledby="titulo-remoto">
         <h2 id="titulo-remoto">Acceso remoto</h2>
         <Aviso texto={error} />
         {!error && <p>Cargando…</p>}
@@ -87,7 +87,7 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
   const enEdicion = estado.dispositivos.find((d) => d.id === editando) ?? null;
 
   return (
-    <section aria-labelledby="titulo-remoto">
+    <section className="hoja" aria-labelledby="titulo-remoto">
       <h2 id="titulo-remoto">Acceso remoto</h2>
       <p>
         Otra instalación tuya puede leer (nunca escribir) lo que elijas compartir de esta memoria, a través de un relé que
@@ -128,6 +128,7 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
       {estado.dispositivos.length === 0 ? (
         <p>Ningún dispositivo enlazado.</p>
       ) : (
+        <div className="tabla">
         <table aria-label="Dispositivos enlazados">
           <thead>
             <tr>
@@ -174,6 +175,7 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {enEdicion && (
         <EditorAlcance
@@ -323,6 +325,7 @@ function RegistroRemoto({ cliente, dispositivos, version }: { cliente: Cliente; 
       {filas.length === 0 ? (
         <p>Sin registros.</p>
       ) : (
+        <div className="tabla">
         <table aria-label="Registro remoto">
           <thead>
             <tr>
@@ -347,6 +350,7 @@ function RegistroRemoto({ cliente, dispositivos, version }: { cliente: Cliente; 
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </>
   );

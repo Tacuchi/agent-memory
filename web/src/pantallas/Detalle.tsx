@@ -57,126 +57,134 @@ export function Detalle({ id, cliente, navegar }: { id: number; cliente: Cliente
   }
 
   return (
-    <section aria-labelledby="titulo-detalle">
+    <section className="hoja" aria-labelledby="titulo-detalle">
       <h2 id="titulo-detalle">
         #{entrada.id} · {entrada.titulo}
       </h2>
       <Aviso texto={error} />
       <Aviso texto={hecho} tipo="ok" />
-      <dl className="ficha">
-        <dt>Estados</dt>
-        <dd>
-          <Estados entrada={entrada} />
-        </dd>
-        <dt>Tipo y ámbito</dt>
-        <dd>
-          {entrada.tipo} · {entrada.ambito}
-          {entrada.ambito_ref ? ` (${entrada.ambito_ref})` : ""}
-        </dd>
-        <dt>Actualizada</dt>
-        <dd>{fecha(entrada.actualizada_en)}</dd>
-        {entrada.validacion_via && (
-          <>
-            <dt>Validada por</dt>
-            <dd>{entrada.validacion_via}</dd>
-          </>
-        )}
-        {entrada.motivo_rechazo && (
-          <>
-            <dt>Motivo del rechazo</dt>
-            <dd>{entrada.motivo_rechazo}</dd>
-          </>
-        )}
-        {entrada.reemplazada_por !== null && (
-          <>
-            <dt>Reemplazada por</dt>
-            <dd>
-              <IrA id={entrada.reemplazada_por} navegar={navegar} />
-            </dd>
-          </>
-        )}
-        {entrada.reemplaza_a !== null && (
-          <>
-            <dt>Reemplaza a</dt>
-            <dd>
-              <IrA id={entrada.reemplaza_a} navegar={navegar} />
-            </dd>
-          </>
-        )}
-        {entrada.caducidad && (
-          <>
-            <dt>Caducidad</dt>
-            <dd>
-              la caducó {entrada.caducidad.actor === "agente" ? "el agente" : "la persona"} con fecha {entrada.caducidad.fecha}
-              {entrada.caducidad.trabajoCerrado ? " (trabajo cerrado)" : ""}{" "}
-              <button type="button" onClick={() => void actuar("revertir_caducidad", {}, "caducidad revertida")}>
-                Revertir caducidad
-              </button>
-            </dd>
-          </>
-        )}
-      </dl>
-      <pre className="contenido">{entrada.contenido}</pre>
+      <div className="detalle">
+        <div>
+          <div className="tarjeta">
+            <dl className="ficha">
+              <dt>Estados</dt>
+              <dd>
+                <Estados entrada={entrada} />
+              </dd>
+              <dt>Tipo y ámbito</dt>
+              <dd>
+                {entrada.tipo} · {entrada.ambito}
+                {entrada.ambito_ref ? ` (${entrada.ambito_ref})` : ""}
+              </dd>
+              <dt>Actualizada</dt>
+              <dd>{fecha(entrada.actualizada_en)}</dd>
+              {entrada.validacion_via && (
+                <>
+                  <dt>Validada por</dt>
+                  <dd>{entrada.validacion_via}</dd>
+                </>
+              )}
+              {entrada.motivo_rechazo && (
+                <>
+                  <dt>Motivo del rechazo</dt>
+                  <dd>{entrada.motivo_rechazo}</dd>
+                </>
+              )}
+              {entrada.reemplazada_por !== null && (
+                <>
+                  <dt>Reemplazada por</dt>
+                  <dd>
+                    <IrA id={entrada.reemplazada_por} navegar={navegar} />
+                  </dd>
+                </>
+              )}
+              {entrada.reemplaza_a !== null && (
+                <>
+                  <dt>Reemplaza a</dt>
+                  <dd>
+                    <IrA id={entrada.reemplaza_a} navegar={navegar} />
+                  </dd>
+                </>
+              )}
+              {entrada.caducidad && (
+                <>
+                  <dt>Caducidad</dt>
+                  <dd>
+                    la caducó {entrada.caducidad.actor === "agente" ? "el agente" : "la persona"} con fecha {entrada.caducidad.fecha}
+                    {entrada.caducidad.trabajoCerrado ? " (trabajo cerrado)" : ""}{" "}
+                    <button type="button" onClick={() => void actuar("revertir_caducidad", {}, "caducidad revertida")}>
+                      Revertir caducidad
+                    </button>
+                  </dd>
+                </>
+              )}
+            </dl>
+            <pre className="contenido">{entrada.contenido}</pre>
 
-      {entrada.validacion === "pendiente" && entrada.vida === "activa" && (
-        <p className="barra">
-          Pendiente de validar:{" "}
-          <button type="button" onClick={() => navegar({ tipo: "bandeja" })}>
-            ir a la bandeja
-          </button>
-        </p>
-      )}
-
-      {entrada.vida === "activa" && (
-        <>
-          <Editar entrada={entrada} actuar={actuar} />
-          <CambiarAmbito entrada={entrada} actuar={actuar} />
-          <Caducar actuar={actuar} />
-        </>
-      )}
-
-      <h3>Relaciones</h3>
-      {relaciones.length === 0 ? (
-        <p>Sin relaciones.</p>
-      ) : (
-        <ul className="lista" aria-label="Relaciones">
-          {relaciones.map((r) => (
-            <li key={`${r.sentido}-${r.id}`}>
-              <span className="chip">{r.sentido === "saliente" ? "→" : "←"} {r.sentido}</span>
-              <button type="button" className="enlace" onClick={() => navegar({ tipo: "detalle", id: r.id })}>
-                #{r.id} · {r.titulo}
-              </button>
-              <span className="meta">
-                {r.tipo} · {r.vida} · {r.validacion ?? "trabajo"}
-                {r.vigencia_hasta ? ` · vence ${r.vigencia_hasta}` : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <h3>Revisiones</h3>
-      <ol className="revisiones" aria-label="Revisiones">
-        {revisiones.map((r, i) => (
-          <li key={r.numero}>
-            <span className="meta">
-              {r.numero} · {r.accion} · {r.actor} · {fecha(r.creada_en)} · {r.validacion ?? "trabajo"}
-            </span>
-            <details>
-              <summary>{r.titulo}</summary>
-              <pre className="contenido">{r.contenido}</pre>
-            </details>
-            {i < revisiones.length - 1 && entrada.vida === "activa" && (
-              <button
-                type="button"
-                onClick={() => void actuar("restaurar", { numero: r.numero }, `revisión ${r.numero} restaurada`)}
-              >
-                Restaurar la revisión {r.numero}
-              </button>
+            {entrada.validacion === "pendiente" && entrada.vida === "activa" && (
+              <p className="barra-accion">
+                Pendiente de validar:{" "}
+                <button type="button" onClick={() => navegar({ tipo: "bandeja" })}>
+                  ir a la bandeja
+                </button>
+              </p>
             )}
-          </li>
-        ))}
-      </ol>
+          </div>
+          <div className="tarjeta">
+            <h3>Relaciones</h3>
+            {relaciones.length === 0 ? (
+              <p>Sin relaciones.</p>
+            ) : (
+              <ul className="lista" aria-label="Relaciones">
+                {relaciones.map((r) => (
+                  <li key={`${r.sentido}-${r.id}`}>
+                    <span className="chip">{r.sentido === "saliente" ? "→" : "←"} {r.sentido}</span>
+                    <button type="button" className="enlace" onClick={() => navegar({ tipo: "detalle", id: r.id })}>
+                      #{r.id} · {r.titulo}
+                    </button>
+                    <span className="meta">
+                      {r.tipo} · {r.vida} · {r.validacion ?? "trabajo"}
+                      {r.vigencia_hasta ? ` · vence ${r.vigencia_hasta}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <h3>Revisiones</h3>
+            <ol className="revisiones" aria-label="Revisiones">
+              {revisiones.map((r, i) => (
+                <li key={r.numero}>
+                  <span className="meta">
+                    {r.numero} · {r.accion} · {r.actor} · {fecha(r.creada_en)} · {r.validacion ?? "trabajo"}
+                  </span>
+                  <details>
+                    <summary>{r.titulo}</summary>
+                    <pre className="contenido">{r.contenido}</pre>
+                  </details>
+                  {i < revisiones.length - 1 && entrada.vida === "activa" && (
+                    <button
+                      type="button"
+                      onClick={() => void actuar("restaurar", { numero: r.numero }, `revisión ${r.numero} restaurada`)}
+                    >
+                      Restaurar la revisión {r.numero}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+        <div>
+          {entrada.vida === "activa" && (
+            <>
+              <Editar entrada={entrada} actuar={actuar} />
+              <CambiarAmbito entrada={entrada} actuar={actuar} />
+              <Caducar actuar={actuar} />
+            </>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

@@ -29,7 +29,11 @@ export function montarWeb(opciones: OpcionesApi = {}) {
   /** Lo que hace el agente por MCP: con su actor, no el de la persona. */
   const comoAgente = async <T = any,>(op: Operacion, cuerpo: object): Promise<T> => (await api.ejecutar(op, cuerpo, "agente")) as T;
   const comoPersona = async <T = any,>(op: Operacion, cuerpo: object): Promise<T> => (await api.ejecutar(op, cuerpo, "persona")) as T;
-  const vista = () => render(<App cliente={cliente} />);
+  /** Monta la web en la pantalla de esa dirección; sin dirección abre en Resumen. */
+  const vista = (hash = "#buscar") => {
+    history.replaceState(null, "", `/${hash}`);
+    return render(<App cliente={cliente} />);
+  };
   return {
     t,
     api,
