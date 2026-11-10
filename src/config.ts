@@ -8,6 +8,9 @@ export const PUERTO_POR_DEFECTO = 47821;
 export const TOPE_INDICE_POR_DEFECTO = 1500;
 /** Espera máxima del hook de inicio por el servicio (plan 002): nunca bloquea la sesión. */
 export const ESPERA_HOOK_POR_DEFECTO_MS = 2000;
+/** Umbrales de la vista de revisión (plan 003): propuestas a revisar por la persona. */
+export const DIAS_SIN_USO_POR_DEFECTO = 90;
+export const DIAS_SIN_VERIFICAR_POR_DEFECTO = 180;
 
 /** Repos excluidos (AC-20): el paquete trae la lista vacía; los patrones son de la persona. */
 export interface Exclusion {
@@ -23,12 +26,17 @@ export interface Config {
   tokenPath: string;
   pidPath: string;
   logPath: string;
+  /** Registro de purgas: solo id y fecha (AC-27). */
+  purgasPath: string;
+  /** Carpeta por defecto de las exportaciones pedidas desde la web (AC-22). */
+  exportacionesPath: string;
   port: number;
   /** Carpetas declaradas como proyecto (AC-19). */
   proyectos: string[];
   exclusion: Exclusion;
   topeIndice: number;
   esperaHookMs: number;
+  revision: { diasSinUso: number; diasSinVerificar: number };
 }
 
 /** Forma de `config.json`. Las claves que la CLI no conoce se conservan al reescribirlo. */
@@ -38,6 +46,7 @@ export interface ArchivoConfig {
   exclusion?: Partial<Exclusion>;
   indice?: { tope_tokens?: number };
   hook?: { espera_ms?: number };
+  revision?: { dias_sin_uso?: number; dias_sin_verificar?: number };
   [otra: string]: unknown;
 }
 
@@ -57,6 +66,8 @@ export function cargarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     tokenPath: join(home, "token"),
     pidPath: join(home, "servicio.pid"),
     logPath: join(home, "servicio.log"),
+    purgasPath: join(home, "purgas.log"),
+    exportacionesPath: join(home, "exportaciones"),
     port,
     proyectos: archivo.proyectos ?? [],
     exclusion: {
@@ -65,6 +76,10 @@ export function cargarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     topeIndice: entero(archivo.indice?.tope_tokens, "indice.tope_tokens", 200) ?? TOPE_INDICE_POR_DEFECTO,
     esperaHookMs: entero(archivo.hook?.espera_ms, "hook.espera_ms", 0) ?? ESPERA_HOOK_POR_DEFECTO_MS,
+    revision: {
+      diasSinUso: entero(archivo.revision?.dias_sin_uso, "revision.dias_sin_uso", 1) ?? DIAS_SIN_USO_POR_DEFECTO,
+      diasSinVerificar: entero(archivo.revision?.dias_sin_verificar, "revision.dias_sin_verificar", 1) ?? DIAS_SIN_VERIFICAR_POR_DEFECTO,
+    },
   };
 }
 

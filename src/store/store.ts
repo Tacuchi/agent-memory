@@ -141,6 +141,7 @@ export class MemoryStore {
       validadaEn: null,
       usadaEn: null,
       usos: 0,
+      verificadaEn: null,
     };
     if (base.validacion === "validada") base.validadaEn = marca;
 
@@ -239,6 +240,7 @@ export class MemoryStore {
       validadaEn: reglas.validacionInicial(tipo, { actor: "persona" }).validacion === "validada" ? marca : null,
       usadaEn: null,
       usos: 0,
+      verificadaEn: null,
     };
     const entrada = transaction(this.db, () => {
       for (const o of originales) this.exigirSinCambiosConcurrentes(o);
@@ -303,6 +305,43 @@ export class MemoryStore {
       this.insertarRelacion(origenId, destinoId);
       return this.relaciones(origenId);
     });
+  }
+
+  /**
+   * La persona confirma en la vista de revisión que la entrada sigue vigente (AC-25, S-11): queda la
+   * fecha en la entrada y una revisión, sin cambiar contenido ni estados.
+   */
+  confirmarVigencia(id: number): Entrada {
+    return transaction(this.db, () => {
+      const actual = this.obtener(id);
+      if (actual.vida !== "activa" || reglas.estaVencida(actual, this.reloj())) {
+        throw new ReglaError("no_activa", `la entrada ${id} no está activa y vigente: no hay vigencia que confirmar`);
+      }
+      const marca = this.reloj().toISOString();
+      this.db.prepare("UPDATE entradas SET verificada_en = ? WHERE id = ?").run(marca, id);
+      this.registrarRevision({ ...actual, actualizadaEn: marca }, "confirmar_vigencia", "persona");
+      return this.obtener(id);
+    });
+  }
+
+  /**
+   * Vista de revisión (AC-25): activas y vigentes sin uso hace `diasSinUso` o sin verificar hace
+   * `diasSinVerificar`. Solo lista: nada vence por antigüedad.
+   */
+  paraRevisar(umbrales: Umbrales): { entrada: Entrada; motivos: MotivoRevision[] }[] {
+    const ahora = this.reloj();
+    const antes = (dias: number) => new Date(ahora.getTime() - dias * 86_400_000).toISOString();
+    const limiteUso = antes(umbrales.diasSinUso);
+    const limiteVerificacion = antes(umbrales.diasSinVerificar);
+    const r: { entrada: Entrada; motivos: MotivoRevision[] }[] = [];
+    for (const e of this.listar({ validacion: ["pendiente", "validada"] }, 100_000)) {
+      const motivos: MotivoRevision[] = [];
+      const ultimoUso = maximo(e.usadaEn, e.verificadaEn, e.creadaEn);
+      if (ultimoUso < limiteUso) motivos.push("sin_uso");
+      if (e.validacion !== null && maximo(e.verificadaEn, e.validadaEn, e.creadaEn) < limiteVerificacion) motivos.push("sin_verificar");
+      if (motivos.length) r.push({ entrada: e, motivos });
+    }
+    return r.sort((a, b) => a.entrada.id - b.entrada.id);
   }
 
   /** Uso = el agente la lee en detalle o la recibe en una búsqueda (S-11). */
@@ -501,6 +540,17 @@ export class MemoryStore {
   private redactarCampo(texto: string): { texto: string; redactados: string[] } {
     return redactar(texto, this.patrones);
   }
+}
+
+export interface Umbrales {
+  diasSinUso: number;
+  diasSinVerificar: number;
+}
+
+export type MotivoRevision = "sin_uso" | "sin_verificar";
+
+function maximo(...fechas: (string | null)[]): string {
+  return fechas.filter((f): f is string => f !== null).sort().at(-1) ?? "";
 }
 
 function unir(a: string[], b: string[]): string[] {

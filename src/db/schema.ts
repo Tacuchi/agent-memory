@@ -81,6 +81,8 @@ const MIGRACIONES: readonly string[] = [
     DELETE FROM entradas_vec WHERE rowid = old.id;
   END;
   `,
+  // Plan 003: fecha en que la persona confirmó que la entrada sigue vigente (vista de revisión, AC-25).
+  `ALTER TABLE entradas ADD COLUMN verificada_en TEXT;`,
 ];
 
 export const VERSION_ESQUEMA = MIGRACIONES.length;

@@ -48,6 +48,8 @@ export interface Entrada {
   validadaEn: string | null;
   usadaEn: string | null;
   usos: number;
+  /** Última vez que la persona confirmó en la vista de revisión que sigue vigente (S-11). */
+  verificadaEn: string | null;
 }
 
 export interface Caducidad {
@@ -58,7 +60,7 @@ export interface Caducidad {
 }
 
 /** Campos de una entrada que se versionan en cada revisión. */
-export type Instantanea = Omit<Entrada, "id" | "usadaEn" | "usos">;
+export type Instantanea = Omit<Entrada, "id" | "usadaEn" | "usos" | "verificadaEn">;
 
 export interface Revision {
   entradaId: number;

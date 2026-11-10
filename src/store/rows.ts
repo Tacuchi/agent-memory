@@ -20,6 +20,7 @@ export interface FilaEntrada {
   validada_en: string | null;
   usada_en: string | null;
   usos: number;
+  verificada_en: string | null;
 }
 
 export function desdeFila(f: FilaEntrada): Entrada {
@@ -43,6 +44,7 @@ export function desdeFila(f: FilaEntrada): Entrada {
     validadaEn: f.validada_en,
     usadaEn: f.usada_en,
     usos: f.usos,
+    verificadaEn: f.verificada_en ?? null,
   };
 }
 
@@ -69,7 +71,7 @@ export function aParametros(e: Instantanea): Record<string, string | number | nu
 }
 
 export function instantanea(e: Entrada): Instantanea {
-  const { id: _id, usadaEn: _u, usos: _n, ...resto } = e;
+  const { id: _id, usadaEn: _u, usos: _n, verificadaEn: _v, ...resto } = e;
   return resto;
 }
 

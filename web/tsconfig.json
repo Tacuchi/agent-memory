@@ -9,5 +9,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": false
   },
-  "include": ["src", "vite.config.ts", "../tests/web", "../tests/governance"]
+  "include": ["src", "vite.config.ts", "../tests/web", "../tests/**/*.tsx"]
 }

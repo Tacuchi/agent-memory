@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { App } from "../../web/src/App";
 import { ErrorApi, type Cliente } from "../../web/src/api";
-import { Api, type Operacion } from "../../src/service/api";
+import { Api, type OpcionesApi, type Operacion } from "../../src/service/api";
 import { Buscador } from "../../src/search/search";
 import { ReglaError } from "../../src/domain/types";
 import { EmbedderFalso } from "../helpers/embedders";
@@ -12,10 +12,10 @@ import { storeTemporal } from "../helpers/temp";
  * por JSON, como el HTTP, y llama como la persona (la cookie de sesión). Las pruebas por HTTP de
  * la cookie y el enlace están en acceso.test.ts.
  */
-export function montarWeb() {
+export function montarWeb(opciones: OpcionesApi = {}) {
   const embedder = new EmbedderFalso();
   const t = storeTemporal({ embedder });
-  const api = new Api(t.store, new Buscador(t.store, embedder), "0.0.0-prueba");
+  const api = new Api(t.store, new Buscador(t.store, embedder), "0.0.0-prueba", opciones);
   const llamadas: string[] = [];
   const cliente: Cliente = async <T,>(op: string, cuerpo: object = {}): Promise<T> => {
     llamadas.push(op);

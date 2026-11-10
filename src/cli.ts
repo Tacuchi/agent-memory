@@ -1,5 +1,7 @@
 #!/usr/bin/env -S node --disable-warning=ExperimentalWarning
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { desinstalarClaudeCode, instalarClaudeCode } from "./claude-code/install.js";
@@ -11,6 +13,8 @@ import { diagnosticar, formatearHallazgos } from "./doctor.js";
 import { servirMcp } from "./mcp/server.js";
 import { arrancarServicio } from "./service/app.js";
 import { arrancarSeparado, borrarPid, detener, escribirPid, leerPid, salud } from "./service/daemon.js";
+import { purgar } from "./purge/purge.js";
+import { MemoryStore } from "./store/store.js";
 import { version } from "./version.js";
 
 // Punto de entrada del bin `agent-memory`, sobre `node:util` `parseArgs` (plan 002, T1.1).
@@ -28,6 +32,10 @@ memoria:
        [--imprimir]         solo muestra el enlace, sin abrir el navegador
   search <consulta>         busca en el contexto del directorio actual
          [--limite N] [--todos]
+  export                    exporta a markdown, un archivo por entrada (las activas)
+         [--completa]       todas las entradas, con su historia
+         [--destino <dir>]  carpeta nueva o vacía (por defecto, ~/.agent-memory/exportaciones/)
+  purge <id>                borra para siempre una entrada y toda su historia; pide escribir el id
 
 agentes:
   mcp                       servidor MCP por stdio con las herramientas memory_*
@@ -67,6 +75,10 @@ export async function main(argv: string[]): Promise<number> {
       return abrir(resto);
     case "search":
       return search(resto);
+    case "export":
+      return exportarCli(resto);
+    case "purge":
+      return purge(resto);
     case "install":
       return install(resto);
     case "uninstall":
@@ -181,6 +193,59 @@ async function abrir(args: string[]): Promise<number> {
   return salida("web abierta en el navegador (el enlace sirve una sola vez y vence en 60 s)");
 }
 
+/** Exportación (T3.1, AC-22): la hace el servicio, que se arranca si hace falta. */
+async function exportarCli(args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { completa: { type: "boolean" }, destino: { type: "string" } },
+  });
+  if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
+  const config = cargarConfig();
+  const r = await arrancarSeparado(config, ESPERA_START_MS);
+  if (!r.salud) {
+    process.stderr.write(`agent-memory no respondió en ${ESPERA_START_MS / 1000} s; mirá ${config.logPath} o corré «agent-memory doctor»\n`);
+    return 1;
+  }
+  const hecho = await new ClienteServicio(config).llamar<{ destino: string; archivos: number }>("exportar", {
+    ...(values.completa ? { completa: true } : {}),
+    ...(values.destino ? { destino: resolve(process.cwd(), values.destino) } : {}),
+  });
+  return salida(`${hecho.archivos} entradas exportadas${values.completa ? " con su historia" : " (activas)"} en ${hecho.destino}`);
+}
+
+/**
+ * Purga física (T3.2, AC-27): abre la base directamente, sin la API, y pide escribir el id. Es
+ * irreversible: la confirmación es la única barrera.
+ */
+async function purge(args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { confirmar: { type: "string" } } });
+  const id = Number(positionals[0]);
+  if (positionals.length !== 1 || !Number.isInteger(id) || id < 1) return uso("uso: agent-memory purge <id>");
+  const config = cargarConfig();
+  if (!existsSync(config.dbPath)) {
+    process.stderr.write(`no hay memoria en ${config.dbPath}\n`);
+    return 1;
+  }
+  const store = MemoryStore.abrir(config.dbPath, { embedder: null });
+  try {
+    const e = store.obtener(id);
+    process.stdout.write(
+      `Vas a purgar #${e.id} · ${e.titulo} · ${e.tipo}, con sus ${store.revisiones(id).length} revisiones, relaciones y vectores.\n` +
+        "No se puede deshacer. Para retirarla conservando la historia, caducala o reemplazala desde la web.\n",
+    );
+    const respuesta = values.confirmar ?? (await leerLinea(`Escribí el id (${id}) para confirmar: `));
+    if (respuesta.trim() !== String(id)) {
+      process.stderr.write("purga cancelada: el id no coincide; no se borró nada\n");
+      return 1;
+    }
+    purgar(store, id, config.purgasPath);
+    return salida(`#${id} purgada; quedó anotada en ${config.purgasPath} con el id y la fecha, sin contenido`);
+  } finally {
+    store.close();
+  }
+}
+
 /** Comando que abre una URL: `AGENT_MEMORY_NAVEGADOR` si está, si no el del sistema. */
 function navegador(): string[] {
   const propio = process.env.AGENT_MEMORY_NAVEGADOR?.trim();
@@ -235,6 +300,23 @@ async function install(args: string[]): Promise<number> {
     ...(interactivo ? { preguntar } : {}),
   });
   return salida(informe.map((l) => `· ${l}`).join("\n"));
+}
+
+/** Una línea de stdin; si stdin se cierra sin respuesta, devuelve vacío (nunca queda colgada). */
+function leerLinea(pregunta: string): Promise<string> {
+  process.stdout.write(pregunta);
+  const rl = createInterface({ input: process.stdin, terminal: false });
+  return new Promise((resolve) => {
+    let respondida = false;
+    rl.once("line", (linea) => {
+      respondida = true;
+      rl.close();
+      resolve(linea);
+    });
+    rl.once("close", () => {
+      if (!respondida) resolve("");
+    });
+  });
 }
 
 async function preguntar(pregunta: string): Promise<string> {

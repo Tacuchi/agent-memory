@@ -16,5 +16,5 @@
     "verbatimModuleSyntax": true
   },
   "include": ["src", "tests", "scripts", "vitest.config.ts"],
-  "exclude": ["tests/web", "tests/governance"]
+  "exclude": ["tests/web", "tests/**/*.tsx"]
 }

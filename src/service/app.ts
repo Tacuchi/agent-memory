@@ -59,7 +59,12 @@ export async function arrancarServicio(config: Config, opciones: { embedder?: Em
   const embedder = opciones.embedder === undefined ? new TransformersEmbedder(modeloFijado()) : opciones.embedder;
   const token = asegurarToken(config.tokenPath);
   const store = MemoryStore.abrir(config.dbPath, { embedder });
-  const api = new Api(store, new Buscador(store, embedder), version(), { exclusion: exclusionViva(config), topeIndice: config.topeIndice });
+  const api = new Api(store, new Buscador(store, embedder), version(), {
+    exclusion: exclusionViva(config),
+    topeIndice: config.topeIndice,
+    umbralesRevision: config.revision,
+    dirExportaciones: config.exportacionesPath,
+  });
   const servicio = await iniciarServicio({ api, token, port: config.port, dirWeb: opciones.dirWeb === undefined ? dirWebPorDefecto() : opciones.dirWeb });
   const regeneracion = store.regenerarVectores().catch(() => 0);
   return {

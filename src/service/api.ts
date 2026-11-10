@@ -2,13 +2,15 @@ import { z } from "zod";
 import type { Exclusion } from "../config.js";
 import { ambitoPorDefecto } from "../context.js";
 import { contextoExcluido, errorExcluido } from "../exclusion.js";
+import { join, isAbsolute } from "node:path";
+import { exportar } from "../export/export.js";
 import { armarIndice } from "../indice/indice.js";
 import { huella } from "../domain/draft.js";
 import { validarTexto, validarTipo } from "../domain/rules.js";
 import { AMBITOS, ReglaError, TIPOS, VALIDACIONES, type Actor, type Ambito, type Contexto } from "../domain/types.js";
 import type { Buscador } from "../search/search.js";
 import type { Filtros } from "../store/filters.js";
-import type { MemoryStore } from "../store/store.js";
+import type { MemoryStore, Umbrales } from "../store/store.js";
 import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "./views.js";
 
 // Operaciones de la memoria expuestas por el servicio (T3.2). Las reglas viven una sola vez: aquí
@@ -75,6 +77,9 @@ const ESQUEMAS = {
       ambito_ref: z.string().nullable().optional(),
     })
     .strict(),
+  exportar: z.object({ completa: z.boolean().optional(), destino: z.string().min(1).optional() }).strict(),
+  revision: z.object({}).strict(),
+  confirmar_vigencia: z.object({ id }).strict(),
   indice: z.object({ contexto: contextoObligatorio, tope: z.number().int().min(200).max(100_000).optional() }).strict(),
 } as const;
 
@@ -82,18 +87,24 @@ export type Operacion = keyof typeof ESQUEMAS;
 export const OPERACIONES = Object.keys(ESQUEMAS) as Operacion[];
 
 /** Operaciones que la persona hace desde la web (sesión del navegador), nunca el agente. */
-const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito", "fusionar"]);
+const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito", "fusionar", "confirmar_vigencia"]);
 
 export interface OpcionesApi {
   /** Patrones de repos excluidos (AC-20), o cómo leerlos en cada petición; por defecto, ninguno. */
   exclusion?: Exclusion | (() => Exclusion);
   /** Tope del índice de inicio cuando el cliente no manda uno. */
   topeIndice?: number;
+  /** Umbrales en días de la vista de revisión (AC-25). */
+  umbralesRevision?: Umbrales;
+  /** Carpeta donde caen las exportaciones pedidas desde la web; por defecto, ninguna (hay que dar destino). */
+  dirExportaciones?: string;
 }
 
 export class Api {
   private readonly exclusion: () => Exclusion;
   private readonly topeIndice: number;
+  private readonly umbrales: Umbrales;
+  private readonly dirExportaciones: string | null;
 
   constructor(
     private readonly store: MemoryStore,
@@ -104,6 +115,8 @@ export class Api {
     const exclusion = opciones.exclusion ?? { patrones: [], excepciones: [] };
     this.exclusion = typeof exclusion === "function" ? exclusion : () => exclusion;
     this.topeIndice = opciones.topeIndice ?? 1500;
+    this.umbrales = opciones.umbralesRevision ?? { diasSinUso: 90, diasSinVerificar: 180 };
+    this.dirExportaciones = opciones.dirExportaciones ?? null;
   }
 
   esOperacion(nombre: string): nombre is Operacion {
@@ -258,6 +271,42 @@ export class Api {
       ...(d.ambito ? { ambito: d.ambito, ambitoRef: d.ambito_ref ?? null } : {}),
     });
     return { entrada: vistaEntrada(r.entrada), reemplazadas: d.ids, redactados: r.redactados };
+  }
+
+  /**
+   * Exportación a markdown (AC-22). La CLI elige la carpeta destino (absoluta, nueva o vacía); la
+   * web no elige rutas: cae en una carpeta nueva con fecha bajo la de exportaciones.
+   */
+  private exportar(d: z.infer<typeof ESQUEMAS.exportar>, actor: Actor) {
+    let destino: string;
+    if (actor === "persona" || d.destino === undefined) {
+      if (actor === "persona" && d.destino !== undefined) throw new ReglaError("destino_no_permitido", "la web no elige la carpeta: usá «agent-memory export --destino»");
+      if (!this.dirExportaciones) throw new ReglaError("sin_destino", "falta la carpeta destino de la exportación");
+      const sello = this.store.ahora().toISOString().replace(/[:.]/g, "-");
+      destino = join(this.dirExportaciones, `${sello}${d.completa ? "-completa" : ""}`);
+    } else {
+      if (!isAbsolute(d.destino)) throw new ReglaError("destino_relativo", "el destino de la exportación tiene que ser una ruta absoluta");
+      destino = d.destino;
+    }
+    return exportar(this.store, destino, { completa: Boolean(d.completa) });
+  }
+
+  private revision() {
+    return {
+      umbrales: { dias_sin_uso: this.umbrales.diasSinUso, dias_sin_verificar: this.umbrales.diasSinVerificar },
+      entradas: this.store.paraRevisar(this.umbrales).map(({ entrada, motivos }) => ({
+        ...vistaEntrada(entrada, false),
+        motivos,
+        usada_en: entrada.usadaEn,
+        verificada_en: entrada.verificadaEn,
+        validada_en: entrada.validadaEn,
+      })),
+    };
+  }
+
+  private confirmar_vigencia(d: z.infer<typeof ESQUEMAS.confirmar_vigencia>) {
+    const e = this.store.confirmarVigencia(d.id);
+    return { entrada: { ...vistaEntrada(e), verificada_en: e.verificadaEn } };
   }
 
   /** Sin huella, la entrada no cuenta como confirmada; una huella distinta se rechaza (AC-16). */
