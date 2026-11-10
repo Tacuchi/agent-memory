@@ -15,6 +15,7 @@ import { servirMcp } from "./mcp/server.js";
 import { arrancarServicio } from "./service/app.js";
 import { arrancarSeparado, borrarPid, detener, escribirPid, leerPid, salud } from "./service/daemon.js";
 import { purgar } from "./purge/purge.js";
+import { crearRele, leerClaveRele } from "./remoto/rele.js";
 import { MemoryStore } from "./store/store.js";
 import { version } from "./version.js";
 
@@ -44,6 +45,11 @@ agentes:
   install claude-code       conecta Claude Code: MCP, hook de inicio y skill
   uninstall claude-code     quita exactamente lo que agregó install
   hook session-start        hook SessionStart de Claude Code (lo llama Claude Code)
+
+enlace remoto:
+  relay                     corre el relé del enlace remoto (va detrás de HTTPS)
+        [--puerto N] [--host <dir>] [--clave-archivo <ruta>]
+                            la clave sale de AGENT_MEMORY_RELAY_KEY o de un archivo 0600, nunca de un argumento
 
   --version                 muestra la versión
 
@@ -96,6 +102,8 @@ export async function main(argv: string[]): Promise<number> {
       return uninstall(resto);
     case "hook":
       return hook(resto);
+    case "relay":
+      return relay(resto);
     default:
       return uso(`comando desconocido: ${comando}`);
   }
@@ -173,6 +181,41 @@ async function doctor(): Promise<number> {
   const hallazgos = await diagnosticar(config, process.env);
   process.stdout.write(`${formatearHallazgos(hallazgos)}\n`);
   return hallazgos.some((h) => h.nivel === "falla") ? 1 : 0;
+}
+
+/** El relé en primer plano, hasta SIGINT/SIGTERM. No registra nada del tráfico. */
+async function relay(args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    strict: false,
+    options: { puerto: { type: "string" }, host: { type: "string" }, "clave-archivo": { type: "string" } },
+  });
+  const desconocidas = Object.keys(values).filter((k) => !["puerto", "host", "clave-archivo"].includes(k));
+  if (desconocidas.includes("clave")) return uso("la clave del relé no se pasa por argumento: usá AGENT_MEMORY_RELAY_KEY o --clave-archivo");
+  if (desconocidas.length) return uso(`opción desconocida: --${desconocidas[0]}`);
+  if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
+  const puerto = values.puerto === undefined ? 8787 : Number(values.puerto);
+  if (!Number.isInteger(puerto) || puerto < 0 || puerto > 65535) return uso(`puerto inválido: ${String(values.puerto)}`);
+  let clave: string;
+  try {
+    clave = leerClaveRele(process.env, values["clave-archivo"] as string | undefined);
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`);
+    return 1;
+  }
+  const host = (values.host as string | undefined) ?? "127.0.0.1";
+  if (!["127.0.0.1", "::1", "localhost"].includes(host)) {
+    process.stderr.write(`aviso: el relé sirve HTTP sin TLS en ${host}; publicalo detrás de HTTPS, nunca directo a internet\n`);
+  }
+  const rele = await crearRele({ clave, puerto, host });
+  process.stderr.write(`agent-memory relay ${version()} escuchando en ${rele.url.replace(/^ws/, "http")}\n`);
+  await new Promise<void>((resolve) => {
+    process.once("SIGINT", () => resolve());
+    process.once("SIGTERM", () => resolve());
+  });
+  await rele.cerrar();
+  return 0;
 }
 
 async function model(args: string[]): Promise<number> {

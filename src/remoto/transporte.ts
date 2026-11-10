@@ -1,0 +1,144 @@
+/**
+ * Cliente del relé: abre un buzón por WebSocket (sobre TLS con `wss://`) y lo presenta como {@link Transporte}.
+ * Si hay proxy (`HTTPS_PROXY`), abre antes un túnel `CONNECT` con `node:http` y monta el TLS dentro: el proxy solo
+ * ve el host y el puerto del relé. Los destinos de loopback y los de `NO_PROXY` van directo.
+ */
+import { request, type IncomingMessage } from "node:http";
+import type { Socket } from "node:net";
+import { connect as conectarTls } from "node:tls";
+import { WebSocket } from "ws";
+import type { Transporte } from "./canal.js";
+import { TOPE_MENSAJE_POR_DEFECTO } from "./rele.js";
+
+const ESPERA_CONEXION_MS = 10_000;
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+export class ErrorRele extends Error {
+  constructor(
+    readonly codigo: "clave_rele" | "buzon_ocupado" | "sin_conexion" | "proxy",
+    detalle: string,
+  ) {
+    super(detalle);
+    this.name = "ErrorRele";
+  }
+}
+
+export interface OpcionesConexion {
+  /** URL base del relé: `wss://host` (o `ws://` en pruebas locales). */
+  url: string;
+  clave: string;
+  buzon: string;
+  /** Proxy explícito; si falta, se toma de `HTTPS_PROXY`/`https_proxy`. `null` lo desactiva. */
+  proxy?: string | null;
+  env?: NodeJS.ProcessEnv;
+  esperaMs?: number;
+}
+
+export function proxyPara(destino: URL, env: NodeJS.ProcessEnv = process.env): string | null {
+  if (LOOPBACK.has(destino.hostname)) return null;
+  const proxy = env.HTTPS_PROXY ?? env.https_proxy;
+  if (!proxy) return null;
+  const excepciones = (env.NO_PROXY ?? env.no_proxy ?? "")
+    .split(",")
+    .map((h) => h.trim().replace(/^\*?\./, ""))
+    .filter(Boolean);
+  const host = destino.hostname;
+  if (excepciones.some((h) => h === "*" || host === h || host.endsWith(`.${h}`))) return null;
+  return proxy;
+}
+
+export async function conectarRele(op: OpcionesConexion): Promise<Transporte> {
+  const base = new URL(op.url);
+  // La clave del relé viaja en una cabecera: sin TLS solo se admite loopback (pruebas y relé local).
+  if (base.protocol !== "wss:" && !(base.protocol === "ws:" && LOOPBACK.has(base.hostname))) {
+    throw new ErrorRele("sin_conexion", `la URL del relé debe empezar con wss:// (es ${base.protocol}//${base.hostname})`);
+  }
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(op.buzon)) throw new ErrorRele("sin_conexion", "id de buzón inválido");
+  const destino = new URL(`/buzon/${op.buzon}`, base);
+  const proxy = op.proxy === undefined ? proxyPara(destino, op.env) : op.proxy;
+  const espera = op.esperaMs ?? ESPERA_CONEXION_MS;
+  const socket = proxy ? await tunel(proxy, destino, espera) : null;
+  const ws = new WebSocket(destino.toString(), {
+    headers: { authorization: `Bearer ${op.clave}` },
+    maxPayload: TOPE_MENSAJE_POR_DEFECTO,
+    handshakeTimeout: espera,
+    perMessageDeflate: false,
+    ...(socket ? { createConnection: () => socket } : {}),
+  });
+  // Se escucha desde antes del `open`: el relé puede entregar lo encolado en el mismo paquete que el upgrade.
+  const transporte = transporteDe(ws);
+  await new Promise<void>((ok, mal) => {
+    ws.once("open", () => ok());
+    ws.on("unexpected-response", (_req, res: IncomingMessage) => {
+      const estado = res.statusCode ?? 0;
+      ws.terminate();
+      if (estado === 401) mal(new ErrorRele("clave_rele", "el relé rechazó la clave (401)"));
+      else if (estado === 409) mal(new ErrorRele("buzon_ocupado", "el buzón ya tiene dos extremos"));
+      else mal(new ErrorRele("sin_conexion", `el relé respondió ${estado}`));
+    });
+    ws.once("error", (error) => mal(new ErrorRele("sin_conexion", `no se pudo conectar al relé: ${error.message}`)));
+  });
+  return transporte;
+}
+
+function transporteDe(ws: WebSocket): Transporte {
+  const previos: Buffer[] = [];
+  const TOPE_PREVIOS = 64;
+  let receptor: ((datos: Buffer) => void) | null = null;
+  let cerrado = false;
+  const alCerrar: (() => void)[] = [];
+  ws.on("message", (datos) => {
+    const marco = Buffer.isBuffer(datos) ? datos : Array.isArray(datos) ? Buffer.concat(datos) : Buffer.from(datos);
+    if (receptor) receptor(marco);
+    else if (previos.length < TOPE_PREVIOS) previos.push(marco);
+    else ws.terminate();
+  });
+  ws.on("close", () => {
+    cerrado = true;
+    for (const fn of alCerrar.splice(0)) fn();
+  });
+  return {
+    enviar: (datos) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(datos);
+    },
+    alRecibir: (fn) => {
+      receptor = fn;
+      for (const marco of previos.splice(0)) fn(marco);
+    },
+    alCerrar: (fn) => {
+      if (cerrado) fn();
+      else alCerrar.push(fn);
+    },
+    cerrar: () => ws.close(1000),
+  };
+}
+
+/** Túnel `CONNECT host:puerto` por el proxy; con `wss://`, el TLS va adentro del túnel, punta a punta con el relé. */
+function tunel(proxy: string, destino: URL, esperaMs: number): Promise<Socket> {
+  const p = new URL(proxy);
+  if (p.protocol !== "http:") return Promise.reject(new ErrorRele("proxy", `solo se admite un proxy http:// (es ${p.protocol})`));
+  const puerto = destino.port || (destino.protocol === "wss:" ? "443" : "80");
+  const autoridad = `${destino.hostname}:${puerto}`;
+  const cabeceras: Record<string, string> = { host: autoridad };
+  if (p.username) cabeceras["proxy-authorization"] = `Basic ${Buffer.from(`${decodeURIComponent(p.username)}:${decodeURIComponent(p.password)}`).toString("base64")}`;
+  return new Promise((ok, mal) => {
+    const req = request({ host: p.hostname, port: Number(p.port || 80), method: "CONNECT", path: autoridad, headers: cabeceras, timeout: esperaMs });
+    req.once("connect", (res, socket) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        return mal(new ErrorRele("proxy", `el proxy rechazó el túnel (${res.statusCode})`));
+      }
+      if (destino.protocol !== "wss:") return ok(socket);
+      const tls = conectarTls({ socket, servername: destino.hostname });
+      tls.setTimeout(esperaMs, () => tls.destroy(new Error("tiempo agotado en el TLS")));
+      tls.once("secureConnect", () => {
+        tls.setTimeout(0);
+        ok(tls);
+      });
+      tls.once("error", (error) => mal(new ErrorRele("proxy", `TLS dentro del túnel: ${error.message}`)));
+    });
+    req.once("timeout", () => req.destroy(new Error("tiempo agotado")));
+    req.once("error", (error) => mal(new ErrorRele("proxy", `no se pudo abrir el túnel: ${error.message}`)));
+    req.end();
+  });
+}
