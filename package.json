@@ -17,9 +17,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "model:measure": "tsc -p tsconfig.build.json && node --disable-warning=ExperimentalWarning dist/medir-modelos.js",
+    "model:fetch": "tsc -p tsconfig.build.json && node --disable-warning=ExperimentalWarning dist/model-fetch.js"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
     "sqlite-vec": "0.1.9"
   },
   "devDependencies": {

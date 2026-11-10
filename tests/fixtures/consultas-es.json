@@ -1,0 +1,212 @@
+{
+  "descripcion": "Corpus y consultas sintéticos en español para medir y vigilar la búsqueda (AC-04). Ninguna nota es real.",
+  "corpus": [
+    {
+      "clave": "reintentos",
+      "tipo": "leccion",
+      "titulo": "Reintentos con espera exponencial",
+      "contenido": "Cuando un servicio externo devuelve error 503, conviene reintentar con pausas que se duplican en cada intento y un tope máximo."
+    },
+    {
+      "clave": "sqlite-unica",
+      "tipo": "decision",
+      "titulo": "SQLite como única base local",
+      "contenido": "Toda la memoria vive en un solo archivo de base de datos embebida; no se usa un servidor de base de datos aparte."
+    },
+    {
+      "clave": "commits",
+      "tipo": "convencion",
+      "titulo": "Mensajes de commit en una línea",
+      "contenido": "El mensaje de cada commit describe qué se modificó en una sola línea, con prefijo opcional feat o fix."
+    },
+    {
+      "clave": "idioma",
+      "tipo": "preferencia",
+      "titulo": "Responder en español",
+      "contenido": "La persona prefiere que todas las respuestas, informes y preguntas estén escritos en castellano."
+    },
+    {
+      "clave": "panel-pagos",
+      "tipo": "referencia",
+      "titulo": "Panel de métricas del servicio de pagos",
+      "contenido": "Las gráficas de latencia y errores del cobro con tarjeta están en el tablero de observabilidad del equipo."
+    },
+    {
+      "clave": "zona-horaria",
+      "tipo": "leccion",
+      "titulo": "Zona horaria en fechas de vencimiento",
+      "contenido": "Las fechas se comparan en hora local de Lima; convertir a UTC antes de comparar adelanta el día y vence entradas antes de tiempo."
+    },
+    {
+      "clave": "pruebas-sin-red",
+      "tipo": "leccion",
+      "titulo": "Pruebas sin red",
+      "contenido": "La suite de pruebas debe correr desconectada de internet; los modelos se descargan una vez antes y quedan en la caché."
+    },
+    {
+      "clave": "token-0600",
+      "tipo": "decision",
+      "titulo": "Token en archivo con permisos 0600",
+      "contenido": "El secreto que autoriza peticiones al servicio local se guarda en un fichero legible solo por el dueño."
+    },
+    {
+      "clave": "ramas",
+      "tipo": "convencion",
+      "titulo": "Nombres de ramas",
+      "contenido": "Las ramas de trabajo se llaman con el prefijo feature seguido de una descripción corta en minúsculas separada por guiones."
+    },
+    {
+      "clave": "model-fetch",
+      "tipo": "referencia",
+      "titulo": "Comando para traer el modelo",
+      "contenido": "Ejecutar npm run model:fetch descarga el modelo de embeddings a la caché local una sola vez."
+    },
+    {
+      "clave": "huella",
+      "tipo": "leccion",
+      "titulo": "Huella del borrador",
+      "contenido": "La función calcularHuellaBorrador devuelve el sha256 del contenido canónico ya redactado."
+    },
+    {
+      "clave": "rrf",
+      "tipo": "decision",
+      "titulo": "Fusión RRF de rankings",
+      "contenido": "La búsqueda combina los dos rankings con RRF y la constante 60."
+    },
+    {
+      "clave": "wal",
+      "tipo": "leccion",
+      "titulo": "Bloqueos de escritura en SQLite",
+      "contenido": "Con el modo WAL los lectores no esperan al escritor; usar busy_timeout para que una escritura concurrente espere en vez de fallar."
+    },
+    {
+      "clave": "errores-explicitos",
+      "tipo": "convencion",
+      "titulo": "Errores explícitos",
+      "contenido": "Un fallo del almacén se informa como error y nunca como una lista vacía."
+    },
+    {
+      "clave": "estado-plan",
+      "tipo": "proyecto",
+      "titulo": "Estado del plan 001",
+      "contenido": "Fase 2 en curso: búsqueda híbrida."
+    },
+    {
+      "clave": "breves",
+      "tipo": "preferencia",
+      "titulo": "Respuestas breves",
+      "contenido": "La persona quiere textos cortos, con el siguiente paso primero y sin introducciones."
+    },
+    {
+      "clave": "migraciones",
+      "tipo": "leccion",
+      "titulo": "Migraciones versionadas",
+      "contenido": "El esquema se versiona con PRAGMA user_version y cada migración corre una vez dentro de su transacción."
+    },
+    {
+      "clave": "puerto",
+      "tipo": "referencia",
+      "titulo": "Puerto por defecto 47821",
+      "contenido": "El servicio escucha en 127.0.0.1:47821 salvo que se configure otro."
+    },
+    {
+      "clave": "cache-ci",
+      "tipo": "leccion",
+      "titulo": "Caché de dependencias en CI",
+      "contenido": "Guardar node_modules entre corridas acorta la integración continua de minutos a segundos."
+    },
+    {
+      "clave": "telemetria",
+      "tipo": "decision",
+      "titulo": "Sin telemetría",
+      "contenido": "La herramienta no envía datos de uso a ningún servidor externo."
+    }
+  ],
+  "consultas": [
+    {
+      "clase": "parafrasis",
+      "consulta": "volver a llamar a una API caída aguardando cada vez más",
+      "esperada": "reintentos"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "guardar todo en un fichero sin motor externo",
+      "esperada": "sqlite-unica"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "cómo redactar la descripción al confirmar cambios en git",
+      "esperada": "commits"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "idioma que quiere el usuario para comunicarse",
+      "esperada": "idioma"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "dónde mirar los tiempos de respuesta al cobrar",
+      "esperada": "panel-pagos"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "problema de husos al calcular caducidades",
+      "esperada": "zona-horaria"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "ejecutar los tests offline",
+      "esperada": "pruebas-sin-red"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "dónde queda la credencial que habilita llamar al daemon",
+      "esperada": "token-0600"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "cómo nombrar una branch nueva",
+      "esperada": "ramas"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "le gusta que vaya al grano",
+      "esperada": "breves"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "acelerar el pipeline reutilizando paquetes instalados",
+      "esperada": "cache-ci"
+    },
+    {
+      "clase": "parafrasis",
+      "consulta": "no se reportan estadísticas a terceros",
+      "esperada": "telemetria"
+    },
+    {
+      "clase": "nombre_exacto",
+      "consulta": "calcularHuellaBorrador",
+      "esperada": "huella"
+    },
+    {
+      "clase": "nombre_exacto",
+      "consulta": "npm run model:fetch",
+      "esperada": "model-fetch"
+    },
+    {
+      "clase": "nombre_exacto",
+      "consulta": "RRF",
+      "esperada": "rrf"
+    },
+    {
+      "clase": "nombre_exacto",
+      "consulta": "busy_timeout",
+      "esperada": "wal"
+    },
+    {
+      "clase": "nombre_exacto",
+      "consulta": "47821",
+      "esperada": "puerto"
+    }
+  ]
+}
