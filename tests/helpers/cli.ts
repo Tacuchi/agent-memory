@@ -65,13 +65,15 @@ export function ejecutableNode(carpeta: string, nombre: string, script: string):
   return sh;
 }
 
-const VARIABLES_BASE_WINDOWS = [
-  "SystemRoot", "windir", "SystemDrive", "ComSpec", "PATHEXT", "TEMP", "TMP", "LOCALAPPDATA", "APPDATA",
-  "ProgramData", "ProgramFiles", "PSModulePath", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
-];
+/** Lo que la prueba fija o aísla; el resto del entorno de Windows se hereda. */
+const CONTROLADAS = /^(PATH|HOME|USERPROFILE|NODE_OPTIONS|LANG)$|^(AGENT_MEMORY_|CLAUDE|FAKE_CLAUDE_|VITEST)/i;
 
-function variablesBaseWindows(): NodeJS.ProcessEnv {
-  return Object.fromEntries(VARIABLES_BASE_WINDOWS.filter((v) => process.env[v] !== undefined).map((v) => [v, process.env[v]]));
+/**
+ * Windows hereda el entorno del sistema: sin él, PowerShell tarda 25-30 s en cada consulta CIM (3 s con él),
+ * y la red y cmd.exe necesitan sus variables base. HOME, PATH y lo de agent-memory y Claude siguen aislados.
+ */
+function entornoSistemaWindows(): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(process.env).filter(([clave]) => !CONTROLADAS.test(clave)));
 }
 
 /** Windows no tiene git en System32: la carpeta del `git.exe` del PATH de las pruebas, para resolver repos. */
@@ -100,9 +102,8 @@ export async function entornoCli(opciones: { claude?: boolean } = {}): Promise<E
     FAKE_CLAUDE_LOG: logClaude,
     FAKE_CLAUDE_STATE: estadoClaude,
     LANG: "C.UTF-8",
-    // Windows: su HOME es USERPROFILE (lo lee os.homedir()); las variables base del sistema son las que
-    // necesitan la red, cmd.exe y PowerShell para funcionar.
-    ...(WINDOWS ? { ...variablesBaseWindows(), USERPROFILE: home } : {}),
+    // Windows: su HOME es USERPROFILE (lo lee os.homedir()).
+    ...(WINDOWS ? { ...entornoSistemaWindows(), USERPROFILE: home } : {}),
   };
   const e: EntornoCli = {
     raiz: dir,
