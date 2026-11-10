@@ -6,6 +6,7 @@ import { ClienteServicio } from "../../src/client.js";
 import { cargarConfig } from "../../src/config.js";
 import { HERRAMIENTAS } from "../../src/mcp/server.js";
 import { procesoVivo } from "../../src/service/daemon.js";
+import { version } from "../../src/version.js";
 import { clienteMcp, correr, entornoCli, llamarHerramienta, type EntornoCli } from "../helpers/cli.js";
 import { CLI, asegurarBuild } from "../helpers/servicio.js";
 
@@ -96,7 +97,8 @@ describe("start, status, search y stop", () => {
   it("status muestra puerto, pid y versión", async () => {
     const r = await correr(e, ["status"]);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(new RegExp(`0\\.1\\.0 corriendo · puerto ${e.port} · pid ${pid}`));
+    // La versión sale del package.json: el test no se rompe en cada release.
+    expect(r.stdout).toContain(`${version()} corriendo · puerto ${e.port} · pid ${pid}`);
   });
 
   it("search encuentra lo guardado en el contexto actual", async () => {
