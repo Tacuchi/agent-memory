@@ -1,4 +1,5 @@
-import type { Config } from "../config.js";
+import { existsSync, statSync } from "node:fs";
+import { cargarConfig, type Config, type Exclusion } from "../config.js";
 import { Buscador } from "../search/search.js";
 import { TransformersEmbedder } from "../search/embedder.js";
 import { modeloFijado } from "../search/models.js";
@@ -16,12 +17,39 @@ export interface App extends Servicio {
 
 type EmbedderCompleto = Embedder & { embedQuery(texto: string): Promise<Float32Array> };
 
+/**
+ * La exclusión se relee cuando cambia `config.json` (por ejemplo, tras `install --excluir`): un repo
+ * recién excluido queda protegido sin reiniciar el servicio. Un archivo ilegible deja la última buena.
+ */
+function exclusionViva(config: Config): () => Exclusion {
+  let actual = config.exclusion;
+  let marca = sello(config.configPath);
+  return () => {
+    const nueva = sello(config.configPath);
+    if (nueva !== marca) {
+      marca = nueva;
+      try {
+        actual = cargarConfig({ ...process.env, AGENT_MEMORY_HOME: config.home }).exclusion;
+      } catch {
+        // Se conserva la última exclusión válida.
+      }
+    }
+    return actual;
+  };
+}
+
+function sello(ruta: string): string {
+  if (!existsSync(ruta)) return "ausente";
+  const s = statSync(ruta);
+  return `${s.mtimeMs}:${s.size}`;
+}
+
 /** Raíz de composición del servicio: almacén, búsqueda, token y HTTP sobre el directorio de datos. */
 export async function arrancarServicio(config: Config, opciones: { embedder?: EmbedderCompleto | null } = {}): Promise<App> {
   const embedder = opciones.embedder === undefined ? new TransformersEmbedder(modeloFijado()) : opciones.embedder;
   const token = asegurarToken(config.tokenPath);
   const store = MemoryStore.abrir(config.dbPath, { embedder });
-  const api = new Api(store, new Buscador(store, embedder), version());
+  const api = new Api(store, new Buscador(store, embedder), version(), { exclusion: exclusionViva(config), topeIndice: config.topeIndice });
   const servicio = await iniciarServicio({ api, token, port: config.port });
   const regeneracion = store.regenerarVectores().catch(() => 0);
   return {

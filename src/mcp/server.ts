@@ -3,7 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ClienteServicio } from "../client.js";
-import { AMBITOS, TIPOS, VALIDACIONES, type Contexto } from "../domain/types.js";
+import { AMBITOS, TIPOS, VALIDACIONES } from "../domain/types.js";
+import type { ContextoCompleto } from "../exclusion.js";
 import { version } from "../version.js";
 
 // Servidor MCP por stdio (T3.3): declara las once herramientas memory_* y traduce cada llamada a
@@ -40,9 +41,11 @@ const borrador = {
     .describe("huella del borrador que la persona confirmó; guarda validado por conversación si el texto es idéntico"),
 };
 
-export function crearServidorMcp(cliente: ClienteServicio, contexto: Contexto): McpServer {
+export function crearServidorMcp(cliente: ClienteServicio, contexto: ContextoCompleto): McpServer {
   const server = new McpServer({ name: "agent-memory", version: version() });
-  const llamar = (op: string, cuerpo: object) => ejecutar(() => cliente.llamar(op, cuerpo));
+  // Cada llamada lleva el contexto: el servicio rechaza todo en un repo excluido (AC-20).
+  const servicio = (op: string, cuerpo: object) => cliente.llamar(op, { ...cuerpo, contexto });
+  const llamar = (op: string, cuerpo: object) => ejecutar(() => servicio(op, cuerpo));
   const conFiltros = (a: Record<string, unknown>) => {
     const { ambito, tipos, validacion, incluir_reemplazadas, incluir_vencidas, todos_los_ambitos, ...resto } = a;
     return {
@@ -119,10 +122,10 @@ export function crearServidorMcp(cliente: ClienteServicio, contexto: Contexto): 
         const cambia = edicion.titulo !== undefined || edicion.contenido !== undefined;
         if (!cambia && edicion.borrador) throw new Error("el borrador no cambia el título ni el contenido");
         if (!cambia && !relacionar_con?.length) throw new Error("memory_edit necesita título, contenido o relacionar_con");
-        const resultado = cambia ? await cliente.llamar("editar", limpiar(edicion)) : null;
+        const resultado = cambia ? await servicio("editar", limpiar(edicion)) : null;
         if (edicion.borrador) return resultado;
-        for (const destino of relacionar_con ?? []) await cliente.llamar("relacionar", { origen: a.id, destino });
-        return resultado ?? (await cliente.llamar("leer", { id: a.id }));
+        for (const destino of relacionar_con ?? []) await servicio("relacionar", { origen: a.id, destino });
+        return resultado ?? (await servicio("leer", { id: a.id }));
       }),
   );
 
@@ -187,7 +190,7 @@ export function crearServidorMcp(cliente: ClienteServicio, contexto: Contexto): 
 }
 
 /** Arranca el servidor MCP sobre stdio. */
-export async function servirMcp(cliente: ClienteServicio, contexto: Contexto): Promise<void> {
+export async function servirMcp(cliente: ClienteServicio, contexto: ContextoCompleto): Promise<void> {
   const server = crearServidorMcp(cliente, contexto);
   await server.connect(new StdioServerTransport());
 }

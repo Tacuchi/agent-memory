@@ -26,7 +26,7 @@ export class ClienteServicio {
     try {
       token = leerToken(this.config.tokenPath);
     } catch {
-      throw new ErrorServicio("sin_token", `no hay token en ${this.config.tokenPath}: el servicio nunca arrancó; arrancalo con «agent-memory serve»`);
+      throw new ErrorServicio("sin_token", `no hay token en ${this.config.tokenPath}: el servicio nunca arrancó; arrancalo con «agent-memory start»`);
     }
     let res: Response;
     try {
@@ -39,7 +39,7 @@ export class ClienteServicio {
     } catch (error) {
       throw new ErrorServicio(
         "servicio_caido",
-        `el servicio de agent-memory no responde en ${this.url} (${(error as Error).message}); arrancalo con «agent-memory serve»`,
+        `el servicio de agent-memory no responde en ${this.url} (${(error as Error).message}); arrancalo con «agent-memory start»`,
       );
     }
     const datos = (await res.json().catch(() => null)) as { error?: { codigo: string; mensaje: string } } | null;

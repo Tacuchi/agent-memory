@@ -1,7 +1,7 @@
 {
   "name": "agent-memory",
   "version": "0.1.0",
-  "description": "Memoria local para agentes de código: almacén SQLite con búsqueda híbrida, servicio local con token y servidor MCP.",
+  "description": "Memoria local para agentes de código: almacén SQLite con búsqueda híbrida, servicio local con token, servidor MCP y conexión con Claude Code.",
   "type": "module",
   "private": true,
   "license": "UNLICENSED",
@@ -12,7 +12,8 @@
     "agent-memory": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

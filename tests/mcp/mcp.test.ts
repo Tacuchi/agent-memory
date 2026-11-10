@@ -231,7 +231,7 @@ describe("agent-memory mcp con un cliente MCP genérico", () => {
       await otro.app.cerrar();
       const r = (await c2.callTool({ name: "memory_search", arguments: { consulta: "algo" } })) as { isError?: boolean; content: { text: string }[] };
       expect(r.isError).toBe(true);
-      expect(r.content[0]?.text).toMatch(/no responde.*agent-memory serve/);
+      expect(r.content[0]?.text).toMatch(/no responde.*agent-memory start/);
     } finally {
       await c2.close();
       rmSync(otro.home, { recursive: true, force: true });

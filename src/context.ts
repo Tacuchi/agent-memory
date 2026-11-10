@@ -16,6 +16,16 @@ export function resolverContexto(cwd: string, opciones: OpcionesContexto = {}): 
   return { repo: resolverRepo(dir), proyecto: resolverProyecto(dir, opciones.proyectos ?? []) };
 }
 
+/**
+ * Contexto que mandan el MCP, la CLI y el hook: repo y proyecto más la carpeta de trabajo (raíz
+ * del repo si hay uno), que el servicio solo compara como texto para la exclusión (AC-20).
+ */
+export function contextoCliente(cwd: string, opciones: OpcionesContexto = {}): Contexto & { ruta: string } {
+  const dir = canonica(cwd);
+  const raiz = git(dir, ["rev-parse", "--show-toplevel"]);
+  return { ...resolverContexto(dir, opciones), ruta: raiz ? canonica(raiz) : dir };
+}
+
 /** Ámbito por defecto de una entrada nueva: proyecto, si no repo, si no global (AC-19, S-12). */
 export function ambitoPorDefecto(contexto: Contexto): { ambito: Ambito; ambitoRef: string | null } {
   if (contexto.proyecto) return { ambito: "proyecto", ambitoRef: contexto.proyecto };

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { request } from "node:http";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -11,12 +11,9 @@ import { dirTemporal } from "./temp.js";
 export const RAIZ = fileURLToPath(new URL("../../", import.meta.url));
 export const CLI = `${RAIZ}dist/cli.js`;
 
-let compilado = false;
-/** Las pruebas que lanzan el bin necesitan `dist/` al día. */
+/** Las pruebas que lanzan el bin necesitan `dist/`: lo compila una vez `tests/setup/build.ts`. */
 export function asegurarBuild(): void {
-  if (compilado) return;
-  execFileSync(process.execPath, [`${RAIZ}node_modules/typescript/bin/tsc`, "-p", `${RAIZ}tsconfig.build.json`], { stdio: "inherit" });
-  compilado = true;
+  if (!existsSync(CLI)) throw new Error(`falta ${CLI}: el globalSetup de vitest no compiló dist/`);
 }
 
 export interface ServicioDePrueba {

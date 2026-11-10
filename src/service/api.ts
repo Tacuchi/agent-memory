@@ -1,5 +1,8 @@
 import { z } from "zod";
+import type { Exclusion } from "../config.js";
 import { ambitoPorDefecto } from "../context.js";
+import { contextoExcluido, errorExcluido } from "../exclusion.js";
+import { armarIndice } from "../indice/indice.js";
 import { huella } from "../domain/draft.js";
 import { validarTexto, validarTipo } from "../domain/rules.js";
 import { AMBITOS, ReglaError, TIPOS, VALIDACIONES, type Actor, type Ambito, type Contexto } from "../domain/types.js";
@@ -12,10 +15,10 @@ import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "./vi
 // y en el almacén. MCP, CLI y web solo traducen a estas operaciones.
 
 const id = z.number().int().positive();
-const contexto = z
-  .object({ repo: z.string().min(1).nullable(), proyecto: z.string().min(1).nullable() })
-  .strict()
-  .optional();
+const contextoObligatorio = z
+  .object({ repo: z.string().min(1).nullable(), proyecto: z.string().min(1).nullable(), ruta: z.string().min(1).nullable().optional() })
+  .strict();
+const contexto = contextoObligatorio.optional();
 const filtros = z
   .object({
     ambito: z.enum(AMBITOS).optional(),
@@ -62,6 +65,7 @@ const ESQUEMAS = {
   rechazar: z.object({ id, motivo: z.string().optional() }).strict(),
   cambiar_ambito: z.object({ id, ambito: z.enum(AMBITOS), ambito_ref: z.string().nullable().optional() }).strict(),
   relacionar: z.object({ origen: id, destino: id }).strict(),
+  indice: z.object({ contexto: contextoObligatorio, tope: z.number().int().min(200).max(100_000).optional() }).strict(),
 } as const;
 
 export type Operacion = keyof typeof ESQUEMAS;
@@ -70,12 +74,27 @@ export const OPERACIONES = Object.keys(ESQUEMAS) as Operacion[];
 /** Operaciones que la persona hace desde la web (sesión del navegador), nunca el agente. */
 const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito"]);
 
+export interface OpcionesApi {
+  /** Patrones de repos excluidos (AC-20), o cómo leerlos en cada petición; por defecto, ninguno. */
+  exclusion?: Exclusion | (() => Exclusion);
+  /** Tope del índice de inicio cuando el cliente no manda uno. */
+  topeIndice?: number;
+}
+
 export class Api {
+  private readonly exclusion: () => Exclusion;
+  private readonly topeIndice: number;
+
   constructor(
     private readonly store: MemoryStore,
     private readonly buscador: Buscador,
     private readonly version: string,
-  ) {}
+    opciones: OpcionesApi = {},
+  ) {
+    const exclusion = opciones.exclusion ?? { patrones: [], excepciones: [] };
+    this.exclusion = typeof exclusion === "function" ? exclusion : () => exclusion;
+    this.topeIndice = opciones.topeIndice ?? 1500;
+  }
 
   esOperacion(nombre: string): nombre is Operacion {
     return Object.hasOwn(ESQUEMAS, nombre);
@@ -85,8 +104,27 @@ export class Api {
     if (SOLO_PERSONA.has(op) && actor !== "persona") {
       throw new ReglaError("solo_persona", `«${op}» lo hace la persona desde la web, no el agente`);
     }
-    const datos = ESQUEMAS[op].parse(cuerpo ?? {}) as never;
+    const datos = ESQUEMAS[op].parse(this.sinContextoAjeno(op, cuerpo, actor)) as never;
     return this[op](datos, actor);
+  }
+
+  /**
+   * Toda operación del agente acepta el contexto del cliente: si es un repo excluido (AC-20), no se
+   * guarda ni se devuelve nada. Las operaciones que no lo usan lo reciben solo para este control.
+   */
+  private sinContextoAjeno(op: Operacion, cuerpo: unknown, actor: Actor): unknown {
+    const datos = (cuerpo ?? {}) as Record<string, unknown>;
+    if (typeof datos !== "object" || Array.isArray(datos) || !("contexto" in datos)) return datos;
+    const ctx = contextoObligatorio.parse(datos.contexto);
+    if (actor === "agente" && contextoExcluido(ctx, this.exclusion())) throw errorExcluido();
+    if ("contexto" in ESQUEMAS[op].shape) return datos;
+    const { contexto: _usado, ...resto } = datos;
+    return resto;
+  }
+
+  private indice(d: z.infer<typeof ESQUEMAS.indice>) {
+    const entradas = this.store.listar(aFiltros(undefined, d.contexto), 100_000);
+    return armarIndice(entradas, d.tope ?? this.topeIndice);
   }
 
   private salud() {
