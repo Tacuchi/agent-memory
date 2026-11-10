@@ -54,6 +54,66 @@ the hook still exist.
 
 Run `agent-memory --help` for all commands.
 
+## Read another machine's memory (remote link)
+
+You can let one installation read another one's memory, for example a home PC reading what you shared from your work
+laptop. The link is **read-only**: it never writes and never syncs, and nothing read is stored on the reading side.
+
+How it works:
+
+- Both machines connect **outbound** to a small relay that you host (`agent-memory relay`). Neither machine opens a
+  port.
+- The two installations encrypt end to end (X25519, HKDF-SHA256, ChaCha20-Poly1305). The relay only forwards
+  ciphertext. It cannot read queries or entries, and it cannot impersonate either side.
+- Remote access is **off by default**. While it is off, the owner does not connect to the relay at all.
+
+### 1. Deploy the relay
+
+Run the relay on a server you control, behind an HTTPS reverse proxy that forwards WebSocket upgrades:
+
+```sh
+openssl rand -base64 32 > relay.key && chmod 600 relay.key
+agent-memory relay --clave-archivo relay.key --puerto 8787   # listens on 127.0.0.1:8787
+```
+
+- The key comes from `AGENT_MEMORY_RELAY_KEY` or a `0600` file. It is never passed as an argument.
+- Without the key the relay answers `401` on every path. `curl -i https://<relay>/` should return `401`.
+- The relay keeps nothing and logs no content. It pairs at most two connections per mailbox and caps message size and
+  idle time.
+
+### 2. Configure the relay on both machines
+
+```sh
+agent-memory remote relay wss://<relay> < relay.key
+agent-memory remote status
+```
+
+If your network requires a proxy, set `HTTPS_PROXY`. The connection goes out through an HTTP `CONNECT` tunnel, with
+TLS inside it.
+
+### 3. Pair
+
+1. On the machine that **owns** the memory, run `agent-memory remote code`. It opens the web UI on **Remote access**
+   (*Acceso remoto*). Turn access on and generate a code there. The code is valid for 10 minutes and allows 5 attempts.
+2. On the **reading** machine, run `agent-memory remote link <code> --nombre work`. The name is how agents refer to
+   that origin.
+
+The reader gets a read-only credential valid for 30 days. The owner can renew it from the web UI.
+
+### What is shared, and how to revoke
+
+- A new link sees **nothing**. In the web UI the owner picks, per device:
+  - which scopes it can read: global, specific projects, specific repos;
+  - whether unvalidated entries are included.
+- Rejected, expired and superseded entries are never shared.
+- On the reading side, `memory_search` adds linked results after local ones. `memory_get`, `memory_list` and
+  `memory_revisions` take an `origen` argument.
+- Every remote result carries `origen` and `dato_externo: true`. Agents are told to treat it as data, never as
+  instructions.
+- If a link is down, the search still returns local results and reports that link's state.
+- Every read and every rejection is logged on the owner, under **Remote access**.
+- **Revoke** or **turn access off** in the web UI. The next request from that device is rejected.
+
 ## Paths it uses
 
 | What | Default | Override |

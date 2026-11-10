@@ -73,7 +73,7 @@ describe("relé ciego", () => {
     const pi = abrirComoIniciador(tLectora, { yo: lectora, otro: duena.publica });
     await new Promise((ok) => setTimeout(ok, 50));
     const tDuena = await conectarRele({ url: r.url, clave: CLAVE, buzon: b });
-    const [i, d] = await Promise.all([pi, abrirComoRespondedor(tDuena, { yo: duena, aceptar: (s) => s === lectora.publica })]);
+    const [i, d] = await Promise.all([pi, abrirComoRespondedor(tDuena, { yo: duena, aceptar: (s) => s === lectora.publica || "desconocido" })]);
     i.enviar({ consulta: MARCA });
     expect(await d.recibir()).toEqual({ consulta: MARCA });
     d.enviar({ cuerpo: MARCA });

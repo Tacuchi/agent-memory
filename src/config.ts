@@ -11,6 +11,8 @@ export const ESPERA_HOOK_POR_DEFECTO_MS = 2000;
 /** Umbrales de la vista de revisión: propuestas a revisar por la persona. */
 export const DIAS_SIN_USO_POR_DEFECTO = 90;
 export const DIAS_SIN_VERIFICAR_POR_DEFECTO = 180;
+/** Espera corta de cada enlace remoto: un enlace caído no demora la búsqueda local más que esto. */
+export const ESPERA_REMOTA_POR_DEFECTO_MS = 2000;
 
 export interface Config {
   /** Directorio de datos: `~/.agent-memory/` o `AGENT_MEMORY_HOME`. */
@@ -29,6 +31,8 @@ export interface Config {
   topeIndice: number;
   esperaHookMs: number;
   revision: { diasSinUso: number; diasSinVerificar: number };
+  /** Enlace remoto: espera de cada pedido a otra instalación. */
+  remoto: { esperaMs: number };
 }
 
 /** Forma de `config.json`. Las claves que no figuran aquí se ignoran. */
@@ -38,6 +42,7 @@ interface ArchivoConfig {
   indice?: { tope_tokens?: number };
   hook?: { espera_ms?: number };
   revision?: { dias_sin_uso?: number; dias_sin_verificar?: number };
+  remoto?: { espera_ms?: number };
 }
 
 export function homeDatos(env: NodeJS.ProcessEnv = process.env): string {
@@ -64,6 +69,7 @@ export function cargarConfig(env: NodeJS.ProcessEnv = process.env): Config {
       diasSinUso: entero(archivo.revision?.dias_sin_uso, "revision.dias_sin_uso", 1) ?? DIAS_SIN_USO_POR_DEFECTO,
       diasSinVerificar: entero(archivo.revision?.dias_sin_verificar, "revision.dias_sin_verificar", 1) ?? DIAS_SIN_VERIFICAR_POR_DEFECTO,
     },
+    remoto: { esperaMs: entero(archivo.remoto?.espera_ms, "remoto.espera_ms", 100) ?? ESPERA_REMOTA_POR_DEFECTO_MS },
   };
 }
 

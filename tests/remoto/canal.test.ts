@@ -20,7 +20,7 @@ function identidad(): Identidad {
 async function abrirPar(t: Tuberia, lectora = identidad(), duena = identidad()): Promise<{ i: Sesion; r: Sesion }> {
   const [i, r] = await Promise.all([
     abrirComoIniciador(t.a, { yo: lectora, otro: duena.publica }),
-    abrirComoRespondedor(t.b, { yo: duena, aceptar: (s) => s === lectora.publica }),
+    abrirComoRespondedor(t.b, { yo: duena, aceptar: (s) => s === lectora.publica || "desconocido" }),
   ]);
   return { i, r };
 }
@@ -112,7 +112,7 @@ describe("canal cifrado de extremo a extremo", () => {
       codigoDe(abrirComoIniciador(lado1.a, { yo: lectora, otro: duena.publica, esperaMs: 2000 })),
       codigoDe(abrirComoRespondedor(lado1.b, { yo: intruso, aceptar: () => true, esperaMs: 2000 })),
       codigoDe(abrirComoIniciador(lado2.a, { yo: intruso, otro: duena.publica, esperaMs: 2000 })),
-      codigoDe(abrirComoRespondedor(lado2.b, { yo: duena, aceptar: (s) => s === lectora.publica, esperaMs: 2000 })),
+      codigoDe(abrirComoRespondedor(lado2.b, { yo: duena, aceptar: (s) => s === lectora.publica || "desconocido", esperaMs: 2000 })),
     ]);
     expect(resultados[0]).toBe("clave_distinta");
     expect(resultados[3]).toBe("rechazado");
@@ -194,10 +194,28 @@ describe("canal cifrado de extremo a extremo", () => {
     const duena = identidad();
     const [i, r] = await Promise.all([
       codigoDe(abrirComoIniciador(t.a, { yo: identidad(), otro: duena.publica })),
-      codigoDe(abrirComoRespondedor(t.b, { yo: duena, aceptar: () => false })),
+      codigoDe(abrirComoRespondedor(t.b, { yo: duena, aceptar: () => "revocado" })),
     ]);
     expect(i).toBe("rechazado");
     expect(r).toBe("rechazado");
+  });
+
+  it("el motivo de rechazo solo pasa si es de la lista cerrada", async () => {
+    const t = tuberia();
+    const duena = identidad();
+    let motivo: string | undefined;
+    await Promise.all([
+      abrirComoIniciador(t.a, { yo: identidad(), otro: duena.publica }).catch((e: ErrorCanal) => {
+        motivo = e.motivo;
+      }),
+      abrirComoRespondedor(t.b, { yo: duena, rechazo: "codigo_usado" }).catch(() => undefined),
+    ]);
+    expect(motivo).toBe("codigo_usado");
+    const t2 = tuberia();
+    t2.pasar = (datos, sentido) => (sentido === "ba" ? [Buffer.from(JSON.stringify({ p: "agent-memory/enlace", v: 1, error: "rechazado", motivo: "\u001b[31mrojo" }))] : [datos]);
+    const e = await abrirComoIniciador(t2.a, { yo: identidad(), otro: duena.publica }).catch((x: ErrorCanal) => x);
+    expect((e as ErrorCanal).motivo).toBeUndefined();
+    expect((e as ErrorCanal).message).not.toContain("rojo");
   });
 
   it("una inundación de mensajes sin leer corta la sesión en vez de agotar la memoria", async () => {
@@ -208,4 +226,21 @@ describe("canal cifrado de extremo a extremo", () => {
     for (let n = 0; n < 64; n++) await r.recibir();
     expect(await codigoDe(r.recibir())).toBe("formato");
   });
+
+  it("una respuesta que el relé corta (no entrega y cierra) es un error, nunca un vacío", async () => {
+    const t = tuberia();
+    const { i, r } = await abrirPar(t);
+    t.pasar = (datos, sentido) => {
+      if (sentido === "ba") {
+        t.a.cerrar();
+        return [];
+      }
+      return [datos];
+    };
+    i.enviar({ op: "buscar", datos: { consulta: "x" } });
+    await r.recibir();
+    r.enviar({ ok: true, datos: { resultados: [{ id: 1 }] } });
+    expect(await codigoDe(i.recibir(1000))).toBe("cerrado");
+  });
 });
+

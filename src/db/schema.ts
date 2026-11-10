@@ -83,6 +83,58 @@ const MIGRACIONES: readonly string[] = [
   `,
   // Fecha en que la persona confirmó que la entrada sigue vigente (vista de revisión).
   `ALTER TABLE entradas ADD COLUMN verificada_en TEXT;`,
+  // Enlace remoto de solo lectura (plan 005): ajustes, dispositivos de la dueña, enlaces de la lectora, códigos y registro.
+  `
+  CREATE TABLE remoto_ajustes (
+    clave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
+  );
+
+  CREATE TABLE remoto_dispositivos (
+    id            INTEGER PRIMARY KEY,
+    nombre        TEXT NOT NULL,
+    clave_publica TEXT NOT NULL UNIQUE,
+    buzon         TEXT NOT NULL UNIQUE,
+    enlazado_en   TEXT NOT NULL,
+    usado_en      TEXT,
+    vence_en      TEXT NOT NULL,
+    revocado_en   TEXT,
+    alcance       TEXT NOT NULL DEFAULT '{"ambitos":[],"no_validadas":false}'
+  );
+
+  CREATE TABLE remoto_enlaces (
+    id          INTEGER PRIMARY KEY,
+    origen      TEXT NOT NULL UNIQUE,
+    buzon       TEXT NOT NULL,
+    clave_duena TEXT NOT NULL,
+    enlace_id   INTEGER NOT NULL,
+    vence_en    TEXT NOT NULL,
+    creado_en   TEXT NOT NULL
+  );
+
+  CREATE TABLE remoto_codigos (
+    id        INTEGER PRIMARY KEY,
+    buzon     TEXT NOT NULL UNIQUE,
+    huella    TEXT NOT NULL,
+    vence_en  TEXT NOT NULL,
+    intentos  INTEGER NOT NULL DEFAULT 0,
+    usado_en  TEXT,
+    creado_en TEXT NOT NULL
+  );
+
+  CREATE TABLE remoto_registro (
+    id             INTEGER PRIMARY KEY,
+    fecha          TEXT NOT NULL,
+    dispositivo_id INTEGER,
+    dispositivo    TEXT,
+    herramienta    TEXT NOT NULL,
+    pedido         TEXT,
+    ids            TEXT,
+    resultado      TEXT NOT NULL CHECK (resultado IN ('lectura','rechazo')),
+    motivo         TEXT
+  );
+  CREATE INDEX remoto_registro_dispositivo ON remoto_registro(dispositivo_id, id);
+  `,
 ];
 
 export const VERSION_ESQUEMA = MIGRACIONES.length;

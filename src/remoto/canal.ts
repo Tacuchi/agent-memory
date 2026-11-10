@@ -60,10 +60,15 @@ export type CodigoCanal =
   | "tiempo"
   | "cerrado";
 
+/** Motivos de rechazo que la dueña puede nombrar en claro (lista cerrada: nunca se muestra texto ajeno). */
+export const MOTIVOS_RECHAZO = ["codigo_usado", "codigo_vencido", "intentos_agotados", "credencial_vencida", "revocado", "desconocido"] as const;
+export type MotivoRechazo = (typeof MOTIVOS_RECHAZO)[number];
+
 export class ErrorCanal extends Error {
   constructor(
     readonly codigo: CodigoCanal,
     detalle?: string,
+    readonly motivo?: MotivoRechazo,
   ) {
     super(detalle ? `${codigo}: ${detalle}` : codigo);
     this.name = "ErrorCanal";
@@ -124,11 +129,19 @@ interface OpcionesIniciador {
 
 interface OpcionesRespondedor {
   yo: Identidad;
-  /** En modo `enlace`, dice si la estática de la lectora es una registrada y vigente. */
-  aceptar?: (estatica: string) => boolean;
+  /** En modo `enlace`, dice si la estática de la lectora es una registrada y vigente (o por qué no). */
+  aceptar?: (estatica: string) => true | MotivoRechazo;
+  /** Rechazo inmediato, sin handshake (código usado, vencido o agotado). */
+  rechazo?: MotivoRechazo;
   /** Presente: se espera un emparejamiento con ese secreto y se acepta cualquier estática. */
   secreto?: Buffer;
+  /** Fija el modo sin dar el secreto todavía (lo da `alLlegar`). */
+  modo?: "enlace" | "emparejar";
+  /** Se llama al llegar M1, antes de responder: puede dar el secreto o un rechazo (cuenta intentos, mira vencimientos). */
+  alLlegar?: () => { secreto?: Buffer; rechazo?: MotivoRechazo };
   esperaMs?: number;
+  /** Espera del primer mensaje: la dueña escucha un buzón sin plazo (el relé corta por inactividad). */
+  esperaPrimerMensajeMs?: number;
 }
 
 export async function abrirComoIniciador(t: Transporte, op: OpcionesIniciador): Promise<Sesion> {
@@ -142,7 +155,10 @@ export async function abrirComoIniciador(t: Transporte, op: OpcionesIniciador): 
     const m2 = await cola.siguiente(op.esperaMs ?? ESPERA_HANDSHAKE_MS);
     const r = decodificar(m2);
     if (r.error === "version_incompatible") throw new ErrorCanal("version_incompatible", versionAjena(r.v));
-    if (r.error !== undefined) throw new ErrorCanal("rechazado", "la dueña no aceptó la conexión");
+    if (r.error !== undefined) {
+      const motivo = MOTIVOS_RECHAZO.find((m) => m === r.motivo);
+      throw new ErrorCanal("rechazado", `la dueña no aceptó la conexión${motivo ? ` (${motivo})` : ""}`, motivo);
+    }
     if (r.p !== NOMBRE || r.v !== PROTOCOLO) throw new ErrorCanal("version_incompatible", versionAjena(r.v));
     const re = clavePublica(r.e);
     const rs = clavePublica(r.s);
@@ -161,10 +177,10 @@ export async function abrirComoIniciador(t: Transporte, op: OpcionesIniciador): 
 }
 
 export async function abrirComoRespondedor(t: Transporte, op: OpcionesRespondedor): Promise<Sesion> {
-  const emparejar = op.secreto !== undefined;
+  const emparejar = (op.modo ?? (op.secreto !== undefined ? "emparejar" : "enlace")) === "emparejar";
   const cola = new Cola(t);
   try {
-    const m1 = await cola.siguiente(op.esperaMs ?? ESPERA_HANDSHAKE_MS);
+    const m1 = await cola.siguiente(op.esperaPrimerMensajeMs ?? op.esperaMs ?? ESPERA_HANDSHAKE_MS);
     const i = decodificar(m1);
     if (i.p !== NOMBRE || i.v !== PROTOCOLO) {
       t.enviar(codificar({ p: NOMBRE, v: PROTOCOLO, error: "version_incompatible" }));
@@ -174,17 +190,27 @@ export async function abrirComoRespondedor(t: Transporte, op: OpcionesRespondedo
       t.enviar(codificar({ p: NOMBRE, v: PROTOCOLO, error: "modo_incorrecto" }));
       throw new ErrorCanal("rechazado", "modo de handshake inesperado");
     }
+    const llegada = op.alLlegar?.() ?? {};
+    const secreto = llegada.secreto ?? op.secreto;
+    const rechazo = llegada.rechazo ?? op.rechazo ?? (emparejar && !secreto ? "desconocido" : undefined);
+    if (rechazo) {
+      t.enviar(codificar({ p: NOMBRE, v: PROTOCOLO, error: "rechazado", motivo: rechazo }));
+      throw new ErrorCanal("rechazado", rechazo, rechazo);
+    }
     const ie = clavePublica(i.e);
     const is = clavePublica(i.s);
-    if (!emparejar && !(op.aceptar?.(i.s as string) ?? false)) {
-      t.enviar(codificar({ p: NOMBRE, v: PROTOCOLO, error: "rechazado" }));
-      throw new ErrorCanal("rechazado", "lectora no registrada o sin acceso vigente");
+    if (!emparejar) {
+      const veredicto = op.aceptar?.(i.s as string) ?? "desconocido";
+      if (veredicto !== true) {
+        t.enviar(codificar({ p: NOMBRE, v: PROTOCOLO, error: "rechazado", motivo: veredicto }));
+        throw new ErrorCanal("rechazado", `lectora sin acceso vigente (${veredicto})`, veredicto);
+      }
     }
     const e = generateKeyPairSync("x25519");
     const m2 = codificar({ p: NOMBRE, v: PROTOCOLO, e: publicaDe(e.publicKey), s: op.yo.publica });
     t.enviar(m2);
     const th = transcripcion(m1, m2);
-    const ikm = Buffer.concat([dh(e.privateKey, ie), dh(e.privateKey, is), dh(op.yo.privada, ie), op.secreto ?? Buffer.alloc(0)]);
+    const ikm = Buffer.concat([dh(e.privateKey, ie), dh(e.privateKey, is), dh(op.yo.privada, ie), secreto ?? Buffer.alloc(0)]);
     const claves = derivar(ikm, th);
     t.enviar(codificar({ prueba: hmac(claves.prueba, "duena", th).toString("base64url") }));
     const prueba = decodificar(await cola.siguiente(op.esperaMs ?? ESPERA_HANDSHAKE_MS));

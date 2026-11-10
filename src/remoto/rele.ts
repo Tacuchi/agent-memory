@@ -89,6 +89,7 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
       const primero = otro();
       if (primero) for (const datos of primero.cola.splice(0)) ws.send(datos);
       ws.on("message", (datos, binario) => {
+        if (!lista.includes(yo)) return;
         if (!binario) return ws.close(1003, "solo binario");
         reiniciarReloj();
         const marco = Buffer.isBuffer(datos) ? datos : Array.isArray(datos) ? Buffer.concat(datos) : Buffer.from(datos);
@@ -101,10 +102,18 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
       });
       ws.on("close", () => {
         if (yo.reloj) clearTimeout(yo.reloj);
-        const i = lista.indexOf(yo);
-        if (i >= 0) lista.splice(i, 1);
-        if (lista.length === 0) buzones.delete(id);
-        otro()?.ws.close(1000, "el otro extremo se fue");
+        // El par termina entero y en el acto: el otro sale del buzón ya, para que un recién llegado no se empareje
+        // con un extremo que se está cerrando.
+        const companero = otro();
+        for (const e of [yo, companero]) {
+          const i = e ? lista.indexOf(e) : -1;
+          if (i >= 0) lista.splice(i, 1);
+        }
+        if (lista.length === 0 && buzones.get(id) === lista) buzones.delete(id);
+        if (companero) {
+          if (companero.reloj) clearTimeout(companero.reloj);
+          companero.ws.close(1000, "el otro extremo se fue");
+        }
       });
       ws.on("error", () => ws.terminate());
     });

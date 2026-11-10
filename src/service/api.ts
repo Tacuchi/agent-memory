@@ -9,6 +9,7 @@ import { AMBITOS, ReglaError, TIPOS, VALIDACIONES, type Actor, type Ambito, type
 import type { Buscador } from "../search/search.js";
 import type { Filtros } from "../store/filters.js";
 import type { MemoryStore, Umbrales } from "../store/store.js";
+import type { Remoto } from "../remoto/remoto.js";
 import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "./views.js";
 
 // Operaciones de la memoria expuestas por el servicio. Las reglas viven una sola vez: aquí
@@ -30,12 +31,15 @@ const filtros = z
   .optional();
 const limite = z.number().int().min(1).max(100).optional();
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, "huella sha256 en hexadecimal");
+/** Nombre de un enlace de lectura; `local` (o ausente) es esta instalación. */
+const origen = z.string().min(1).max(40).optional();
+const ambitoAlcance = z.object({ ambito: z.enum(AMBITOS), ref: z.string().min(1).nullable() }).strict();
 
 const ESQUEMAS = {
   salud: z.object({}).strict(),
   buscar: z.object({ consulta: z.string(), contexto, filtros, limite }).strict(),
-  leer: z.object({ id }).strict(),
-  listar: z.object({ contexto, filtros, limite }).strict(),
+  leer: z.object({ id, origen }).strict(),
+  listar: z.object({ contexto, filtros, limite, origen }).strict(),
   crear: z
     .object({
       tipo: z.string(),
@@ -52,7 +56,7 @@ const ESQUEMAS = {
   editar: z
     .object({ id, titulo: z.string().optional(), contenido: z.string().optional(), borrador: z.boolean().optional(), huella: sha256.optional() })
     .strict(),
-  revisiones: z.object({ id }).strict(),
+  revisiones: z.object({ id, origen }).strict(),
   restaurar: z.object({ id, numero: z.number().int().positive() }).strict(),
   caducar: z
     .object({ id, fecha: z.string().optional(), cerrar_trabajo: z.boolean().optional() })
@@ -77,13 +81,38 @@ const ESQUEMAS = {
   revision: z.object({}).strict(),
   confirmar_vigencia: z.object({ id }).strict(),
   indice: z.object({ contexto: contextoObligatorio, tope: z.number().int().min(200).max(100_000).optional() }).strict(),
+  // Enlace remoto, gobierno de la dueña: solo la persona (SOLO_PERSONA).
+  remoto_estado: z.object({}).strict(),
+  remoto_interruptor: z.object({ encendido: z.boolean() }).strict(),
+  remoto_codigo: z.object({}).strict(),
+  remoto_revocar: z.object({ id }).strict(),
+  remoto_renovar: z.object({ id }).strict(),
+  remoto_alcance: z.object({ id, ambitos: z.array(ambitoAlcance).max(50), no_validadas: z.boolean() }).strict(),
+  remoto_registro: z.object({ dispositivo_id: id.optional(), solo_rechazos: z.boolean().optional(), limite: z.number().int().min(1).max(1000).optional() }).strict(),
+  // Enlace remoto desde la CLI (token): configurar el relé, canjear un código como lectora y ver el estado sin secretos.
+  enlace_estado: z.object({}).strict(),
+  enlace_rele: z.object({ url: z.string().min(1), clave: z.string().min(1) }).strict(),
+  enlace_canjear: z.object({ codigo: z.string().min(1).max(100), origen: z.string().min(1).max(40), dispositivo: z.string().min(1).max(80).optional() }).strict(),
 } as const;
 
 export type Operacion = keyof typeof ESQUEMAS;
 export const OPERACIONES = Object.keys(ESQUEMAS) as Operacion[];
 
 /** Operaciones que la persona hace desde la web (sesión del navegador), nunca el agente. */
-const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito", "fusionar", "confirmar_vigencia"]);
+const SOLO_PERSONA: ReadonlySet<Operacion> = new Set([
+  "revertir_caducidad",
+  "cambiar_ambito",
+  "fusionar",
+  "confirmar_vigencia",
+  // Abrir la memoria a otra máquina es de la persona: ningún agente con el token puede hacerlo.
+  "remoto_estado",
+  "remoto_interruptor",
+  "remoto_codigo",
+  "remoto_revocar",
+  "remoto_renovar",
+  "remoto_alcance",
+  "remoto_registro",
+]);
 
 export interface OpcionesApi {
   /** Tope del índice de inicio cuando el cliente no manda uno. */
@@ -92,12 +121,15 @@ export interface OpcionesApi {
   umbralesRevision?: Umbrales;
   /** Carpeta donde caen las exportaciones pedidas desde la web; por defecto, ninguna (hay que dar destino). */
   dirExportaciones?: string;
+  /** Enlace remoto; sin él, `origen` y las operaciones remotas responden que no está disponible. */
+  remoto?: Remoto;
 }
 
 export class Api {
   private readonly topeIndice: number;
   private readonly umbrales: Umbrales;
   private readonly dirExportaciones: string | null;
+  private readonly remoto: Remoto | null;
 
   constructor(
     private readonly store: MemoryStore,
@@ -108,6 +140,12 @@ export class Api {
     this.topeIndice = opciones.topeIndice ?? 1500;
     this.umbrales = opciones.umbralesRevision ?? { diasSinUso: 90, diasSinVerificar: 180 };
     this.dirExportaciones = opciones.dirExportaciones ?? null;
+    this.remoto = opciones.remoto ?? null;
+  }
+
+  private enlace(): Remoto {
+    if (!this.remoto) throw new ReglaError("sin_enlace_remoto", "esta instalación no tiene el enlace remoto");
+    return this.remoto;
   }
 
   esOperacion(nombre: string): nombre is Operacion {
@@ -136,19 +174,26 @@ export class Api {
     };
   }
 
+  /** Lo local primero; después, lo de cada enlace con su origen (los puntajes de bases distintas no se mezclan). */
   private async buscar(d: z.infer<typeof ESQUEMAS.buscar>, actor: Actor) {
+    const remotos = this.remoto?.tieneEnlaces() ? this.remoto.buscarEnEnlaces(d.consulta, d.filtros, d.limite) : null;
     const r = await this.buscador.buscar(d.consulta, { filtros: aFiltros(d.filtros, d.contexto), limite: d.limite ?? 10 });
     if (actor === "agente") this.store.registrarUso(r.resultados.map((x) => x.entrada.id));
-    return { modo: r.modo, aviso: r.aviso, resultados: r.resultados.map(vistaResultado) };
+    const local = { modo: r.modo, aviso: r.aviso, resultados: r.resultados.map(vistaResultado) as unknown[] };
+    if (!remotos) return local;
+    const enlazados = await remotos;
+    return { ...local, resultados: [...local.resultados, ...enlazados.resultados], enlaces: enlazados.enlaces };
   }
 
   private leer(d: z.infer<typeof ESQUEMAS.leer>, actor: Actor) {
+    if (esRemoto(d.origen)) return this.enlace().pedir(d.origen, "leer", { id: d.id });
     const { entrada, relaciones } = this.store.leer(d.id);
     if (actor === "agente") this.store.registrarUso([d.id]);
     return { entrada: vistaEntrada(entrada), relaciones: relaciones.map(vistaRelacion) };
   }
 
   private listar(d: z.infer<typeof ESQUEMAS.listar>) {
+    if (esRemoto(d.origen)) return this.enlace().pedir(d.origen, "listar", limpiarIndefinidos({ filtros: d.filtros, limite: d.limite }));
     return { entradas: this.store.listar(aFiltros(d.filtros, d.contexto), d.limite ?? 50).map((e) => vistaEntrada(e, false)) };
   }
 
@@ -197,6 +242,7 @@ export class Api {
   }
 
   private revisiones(d: z.infer<typeof ESQUEMAS.revisiones>) {
+    if (esRemoto(d.origen)) return this.enlace().pedir(d.origen, "revisiones", { id: d.id });
     return { id: d.id, revisiones: this.store.revisiones(d.id).map(vistaRevision) };
   }
 
@@ -286,6 +332,81 @@ export class Api {
     return { entrada: { ...vistaEntrada(e), verificada_en: e.verificadaEn } };
   }
 
+  // ── Enlace remoto ────────────────────────────────────────────────────────────
+
+  private remoto_estado() {
+    return this.enlace().estado();
+  }
+
+  private remoto_interruptor(d: z.infer<typeof ESQUEMAS.remoto_interruptor>) {
+    this.enlace().fijarInterruptor(d.encendido);
+    return this.enlace().estado();
+  }
+
+  private remoto_codigo() {
+    const r = this.enlace();
+    if (!r.datos.interruptor()) throw new ReglaError("acceso_apagado", "encendé el acceso remoto antes de generar un código");
+    return r.nuevoCodigo();
+  }
+
+  private remoto_revocar(d: z.infer<typeof ESQUEMAS.remoto_revocar>) {
+    const r = this.enlace();
+    return { dispositivo: r.vistaDispositivo(r.datos.revocar(d.id)) };
+  }
+
+  private remoto_renovar(d: z.infer<typeof ESQUEMAS.remoto_renovar>) {
+    const r = this.enlace();
+    return { dispositivo: r.vistaDispositivo(r.datos.renovar(d.id)) };
+  }
+
+  private remoto_alcance(d: z.infer<typeof ESQUEMAS.remoto_alcance>) {
+    const r = this.enlace();
+    return { dispositivo: r.vistaDispositivo(r.datos.fijarAlcance(d.id, { ambitos: d.ambitos, noValidadas: d.no_validadas })) };
+  }
+
+  private remoto_registro(d: z.infer<typeof ESQUEMAS.remoto_registro>) {
+    const registro = this.enlace().datos.registro({
+      ...(d.dispositivo_id !== undefined ? { dispositivoId: d.dispositivo_id } : {}),
+      soloRechazos: Boolean(d.solo_rechazos),
+      ...(d.limite !== undefined ? { limite: d.limite } : {}),
+    });
+    return {
+      registro: registro.map((x) => ({
+        id: x.id,
+        fecha: x.fecha,
+        dispositivo_id: x.dispositivoId,
+        dispositivo: x.dispositivo,
+        herramienta: x.herramienta,
+        pedido: x.pedido,
+        ids: x.ids,
+        resultado: x.resultado,
+        motivo: x.motivo,
+      })),
+    };
+  }
+
+  /** Estado sin secretos ni códigos: para `agent-memory remote status`. */
+  private enlace_estado() {
+    const e = this.enlace().estado();
+    return {
+      interruptor: e.interruptor,
+      rele: e.rele,
+      escuchando: this.enlace().escuchando().length,
+      codigo_vigente: e.codigo !== null,
+      dispositivos: e.dispositivos.map((d) => ({ nombre: d.nombre, estado: d.estado, vence_en: d.vence_en })),
+      enlaces: e.enlaces,
+    };
+  }
+
+  private enlace_rele(d: z.infer<typeof ESQUEMAS.enlace_rele>) {
+    this.enlace().configurarRele(d.url, d.clave);
+    return { rele: this.enlace().estado().rele };
+  }
+
+  private enlace_canjear(d: z.infer<typeof ESQUEMAS.enlace_canjear>) {
+    return this.enlace().enlazar(d.codigo, d.origen, d.dispositivo);
+  }
+
   /** Sin huella, la entrada no cuenta como confirmada; una huella distinta se rechaza. */
   private verificarHuella(recibida: string | undefined, canonico: Record<string, string | number | null>): boolean {
     if (recibida === undefined) return false;
@@ -317,4 +438,12 @@ function aFiltros(f: z.infer<typeof filtros>, ctx: Contexto | undefined): Filtro
     incluirVencidas: Boolean(f?.incluir_vencidas),
     todosLosAmbitos: Boolean(f?.todos_los_ambitos),
   };
+}
+
+function esRemoto(origen: string | undefined): origen is string {
+  return origen !== undefined && origen !== "local";
+}
+
+function limpiarIndefinidos(o: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 }

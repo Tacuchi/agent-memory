@@ -47,7 +47,7 @@ export async function iniciarServicio(opciones: OpcionesServidor): Promise<Servi
     if (!hostLoopback(req.headers.host)) return responder(res, 421, { error: { codigo: "host_ajeno", mensaje: "host no permitido" } });
     const url = new URL(req.url ?? "/", `http://${HOST}`);
 
-    if (req.method === "GET" && url.pathname.startsWith("/sesion/")) return canjearEnlace(url.pathname.slice("/sesion/".length), res);
+    if (req.method === "GET" && url.pathname.startsWith("/sesion/")) return canjearEnlace(url.pathname.slice("/sesion/".length), url.searchParams.get("ir"), res);
 
     const actor = autenticar(req);
     if (req.method === "GET" && !url.pathname.startsWith("/api/")) {
@@ -118,7 +118,8 @@ export async function iniciarServicio(opciones: OpcionesServidor): Promise<Servi
     return `http://${HOST}:${puerto()}/sesion/${nonce}`;
   }
 
-  function canjearEnlace(nonce: string, res: ServerResponse): void {
+  /** `ir` elige la pantalla de entrada entre las conocidas (hoy, la del acceso remoto); cualquier otro valor va al inicio. */
+  function canjearEnlace(nonce: string, ir: string | null, res: ServerResponse): void {
     const vence = enlaces.get(nonce);
     enlaces.delete(nonce);
     if (vence === undefined || vence < reloj()) {
@@ -127,7 +128,7 @@ export async function iniciarServicio(opciones: OpcionesServidor): Promise<Servi
     const sesion = randomBytes(32).toString("hex");
     sesiones.add(sesion);
     res.writeHead(303, {
-      location: "/",
+      location: ir === "remoto" ? "/#remoto" : "/",
       "set-cookie": `${COOKIE}=${sesion}; HttpOnly; SameSite=Strict; Path=/`,
       "cache-control": "no-store",
     });

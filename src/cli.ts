@@ -46,7 +46,13 @@ agentes:
   uninstall claude-code     quita exactamente lo que agregó install
   hook session-start        hook SessionStart de Claude Code (lo llama Claude Code)
 
-enlace remoto:
+enlace remoto (solo lectura entre dos instalaciones, por un relé):
+  remote code               abre la web en «Acceso remoto» para generar un código (lo hace la persona)
+              [--imprimir]  solo muestra el enlace de un solo uso
+  remote link <código> --nombre <origen> [--dispositivo <nombre>]
+                            canjea un código de la otra instalación y la enlaza para leer
+  remote relay <url>        configura el relé (wss://…); la clave se lee por stdin
+  remote status             estado del acceso remoto, dispositivos y enlaces, sin secretos
   relay                     corre el relé del enlace remoto (va detrás de HTTPS)
         [--puerto N] [--host <dir>] [--clave-archivo <ruta>]
                             la clave sale de AGENT_MEMORY_RELAY_KEY o de un archivo 0600, nunca de un argumento
@@ -104,6 +110,8 @@ export async function main(argv: string[]): Promise<number> {
       return hook(resto);
     case "relay":
       return relay(resto);
+    case "remote":
+      return remote(resto);
     default:
       return uso(`comando desconocido: ${comando}`);
   }
@@ -228,7 +236,7 @@ async function model(args: string[]): Promise<number> {
  * Abre la web: arranca el servicio si hace falta, pide con el token un enlace de un solo uso
  * y lo abre en el navegador. El enlace vence en 60 s y no sirve una segunda vez.
  */
-async function abrir(args: string[]): Promise<number> {
+async function abrir(args: string[], ir?: "remoto"): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { imprimir: { type: "boolean" } } });
   if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
   const config = cargarConfig();
@@ -237,7 +245,8 @@ async function abrir(args: string[]): Promise<number> {
     process.stderr.write(`agent-memory no respondió en ${ESPERA_START_MS / 1000} s; mirá ${config.logPath} o corré «agent-memory doctor»\n`);
     return 1;
   }
-  const { url } = await new ClienteServicio(config).llamar<{ url: string }>("enlace-web");
+  const { url: base } = await new ClienteServicio(config).llamar<{ url: string }>("enlace-web");
+  const url = ir ? `${base}?ir=${ir}` : base;
   if (values.imprimir) return salida(url);
   const [programa, ...previos] = navegador();
   const hijo = spawn(programa as string, [...previos, url], { detached: true, stdio: "ignore" });
@@ -251,6 +260,80 @@ async function abrir(args: string[]): Promise<number> {
   }
   hijo.unref();
   return salida("web abierta en el navegador (el enlace sirve una sola vez y vence en 60 s)");
+}
+
+/**
+ * `agent-memory remote …`. Generar el código, el alcance, revocar y renovar son de la persona en la web: `remote code`
+ * solo abre esa pantalla. Lo demás va por el servicio con el token.
+ */
+async function remote(args: string[]): Promise<number> {
+  const [sub, ...resto] = args;
+  if (sub === "code") return abrir(resto, "remoto");
+  if (sub !== "status" && sub !== "relay" && sub !== "link") return uso("uso: agent-memory remote code | link <código> --nombre <origen> | relay <url> | status");
+  const { values, positionals } = parseArgs({ args: resto, allowPositionals: true, options: { nombre: { type: "string" }, dispositivo: { type: "string" } } });
+  const config = cargarConfig();
+  const arranque = await arrancarSeparado(config, ESPERA_START_MS);
+  if (!arranque.salud) {
+    process.stderr.write(`agent-memory no respondió en ${ESPERA_START_MS / 1000} s; mirá ${config.logPath} o corré «agent-memory doctor»\n`);
+    return 1;
+  }
+  const cliente = new ClienteServicio(config);
+  try {
+    if (sub === "status") {
+      if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
+      const e = await cliente.llamar<EstadoEnlaceCli>("enlace_estado");
+      return salida(formatearEstadoRemoto(e));
+    }
+    if (sub === "relay") {
+      if (positionals.length !== 1) return uso("uso: agent-memory remote relay <url>   (la clave del relé, por stdin)");
+      const clave = (await leerStdin()).trim();
+      if (!clave) return uso("falta la clave del relé por stdin, por ejemplo: agent-memory remote relay wss://… < archivo-de-clave");
+      const r = await cliente.llamar<{ rele: { url: string } }>("enlace_rele", { url: positionals[0], clave });
+      return salida(`relé configurado: ${r.rele.url}`);
+    }
+    if (positionals.length !== 1 || !values.nombre) return uso("uso: agent-memory remote link <código> --nombre <origen> [--dispositivo <nombre>]");
+    const r = await cliente.llamar<{ origen: string; vence_en: string }>("enlace_canjear", {
+      codigo: positionals[0],
+      origen: values.nombre,
+      ...(values.dispositivo ? { dispositivo: values.dispositivo } : {}),
+    });
+    return salida(`enlace «${r.origen}» listo, de solo lectura; vence el ${r.vence_en.slice(0, 10)} (la dueña puede renovarlo)`);
+  } catch (error) {
+    if (error instanceof ErrorServicio) {
+      process.stderr.write(`${error.message}\n`);
+      return 1;
+    }
+    throw error;
+  }
+}
+
+interface EstadoEnlaceCli {
+  interruptor: boolean;
+  rele: { url: string } | null;
+  escuchando: number;
+  codigo_vigente: boolean;
+  dispositivos: { nombre: string; estado: string; vence_en: string }[];
+  enlaces: { origen: string; vence_en: string }[];
+}
+
+function formatearEstadoRemoto(e: EstadoEnlaceCli): string {
+  const lineas = [
+    `acceso remoto: ${e.interruptor ? "encendido" : "apagado"}${e.interruptor ? ` (escuchando ${e.escuchando} buzón/es)` : ""}`,
+    `relé: ${e.rele ? e.rele.url : "sin configurar («agent-memory remote relay <url>»)"}`,
+    `código vigente: ${e.codigo_vigente ? "sí" : "no"}`,
+    `dispositivos que leen esta memoria: ${e.dispositivos.length || "ninguno"}`,
+    ...e.dispositivos.map((d) => `  - ${d.nombre}: ${d.estado}, vence ${d.vence_en.slice(0, 10)}`),
+    `enlaces para leer otras memorias: ${e.enlaces.length || "ninguno"}`,
+    ...e.enlaces.map((x) => `  - ${x.origen}: vence ${x.vence_en.slice(0, 10)}`),
+  ];
+  return lineas.join("\n");
+}
+
+async function leerStdin(): Promise<string> {
+  if (process.stdin.isTTY) process.stderr.write("pegá la clave del relé y apretá Ctrl-D:\n");
+  let texto = "";
+  for await (const parte of process.stdin) texto += String(parte);
+  return texto;
 }
 
 /** Exportación: la hace el servicio, que se arranca si hace falta. */
