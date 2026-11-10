@@ -51,8 +51,4 @@ describe("skill agent-memory", () => {
       expect(ENCABEZADO_INDICE).toMatch(p);
     }
   });
-
-  it("no trae patrones de exclusión: viven solo en la configuración local", () => {
-    expect(skill).not.toMatch(/example\.org/);
-  });
 });

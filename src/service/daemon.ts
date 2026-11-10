@@ -22,9 +22,9 @@ export function rutaCli(): string {
   return fileURLToPath(new URL("../cli.js", import.meta.url));
 }
 
-/** Argumentos de node para relanzar la CLI sin el aviso experimental de `node:sqlite`. */
+/** Argumentos de node para relanzar la CLI compilada con el comando dado. */
 export function argumentosNode(...args: string[]): string[] {
-  return ["--disable-warning=ExperimentalWarning", rutaCli(), ...args];
+  return [rutaCli(), ...args];
 }
 
 export function escribirPid(config: Pick<Config, "pidPath">, datos: Pid): void {

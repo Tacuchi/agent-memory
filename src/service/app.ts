@@ -1,6 +1,6 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cargarConfig, type Config, type Exclusion } from "../config.js";
+import type { Config } from "../config.js";
 import { Buscador } from "../search/search.js";
 import { TransformersEmbedder } from "../search/embedder.js";
 import { modeloFijado } from "../search/models.js";
@@ -19,33 +19,6 @@ export interface App extends Servicio {
 type EmbedderCompleto = Embedder & { embedQuery(texto: string): Promise<Float32Array> };
 
 /**
- * La exclusión se relee cuando cambia `config.json` (por ejemplo, tras `install --excluir`): un repo
- * recién excluido queda protegido sin reiniciar el servicio. Un archivo ilegible deja la última buena.
- */
-function exclusionViva(config: Config): () => Exclusion {
-  let actual = config.exclusion;
-  let marca = sello(config.configPath);
-  return () => {
-    const nueva = sello(config.configPath);
-    if (nueva !== marca) {
-      marca = nueva;
-      try {
-        actual = cargarConfig({ ...process.env, AGENT_MEMORY_HOME: config.home }).exclusion;
-      } catch {
-        // Se conserva la última exclusión válida.
-      }
-    }
-    return actual;
-  };
-}
-
-function sello(ruta: string): string {
-  if (!existsSync(ruta)) return "ausente";
-  const s = statSync(ruta);
-  return `${s.mtimeMs}:${s.size}`;
-}
-
-/**
  * La web compilada vive en `dist/web` del paquete. `src/service` y `dist/service` están a la misma
  * profundidad, así que la ruta vale tanto para el bin como para las pruebas sobre el código fuente.
  */
@@ -60,7 +33,6 @@ export async function arrancarServicio(config: Config, opciones: { embedder?: Em
   const token = asegurarToken(config.tokenPath);
   const store = MemoryStore.abrir(config.dbPath, { embedder });
   const api = new Api(store, new Buscador(store, embedder), version(), {
-    exclusion: exclusionViva(config),
     topeIndice: config.topeIndice,
     umbralesRevision: config.revision,
     dirExportaciones: config.exportacionesPath,

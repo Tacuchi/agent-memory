@@ -48,12 +48,12 @@ describe("install / uninstall claude-code", () => {
     const inicio = settings.hooks.SessionStart as { hooks: { command: string }[] }[];
     expect(inicio).toHaveLength(2);
     expect(inicio[0]!.hooks[0]!.command).toBe("echo hola");
-    expect(inicio[1]!.hooks[0]!.command).toMatch(/^AGENT_MEMORY_HOOK=claude-code '.*node.*' --disable-warning=ExperimentalWarning '.*cli\.js' hook session-start$/);
+    expect(inicio[1]!.hooks[0]!.command).toMatch(/^AGENT_MEMORY_HOOK=claude-code '.*node.*' '.*cli\.js' hook session-start$/);
 
     expect(readdirSync(e.estadoClaude)).toEqual(["agent-memory"]);
     const adds = llamadasClaude().filter((l) => l.startsWith("mcp add"));
     expect(adds).toHaveLength(2);
-    expect(adds[0]).toMatch(/^mcp add --scope user agent-memory -- .*node.* --disable-warning=ExperimentalWarning .*cli\.js mcp$/);
+    expect(adds[0]).toMatch(/^mcp add --scope user agent-memory -- .*node.* .*cli\.js mcp$/);
     expect(existsSync(skillPath())).toBe(true);
 
     const doctor = await correr(e, ["doctor"]);
@@ -76,21 +76,25 @@ describe("install / uninstall claude-code", () => {
     expect(existsSync(settingsPath())).toBe(false);
   });
 
-  it("--excluir guarda los patrones en la configuración local; sin flag ni terminal deja la lista vacía y lo dice", async () => {
+  it("termina sin preguntar nada con la entrada estándar vacía y cerrada", async () => {
     e = await entornoCli();
-    const sinFlag = await correr(e, ["install", "claude-code"]);
-    expect(sinFlag.stdout).toMatch(/exclusión: lista vacía, ningún repo queda excluido/);
-    expect(existsSync(join(e.datos, "config.json"))).toBe(false);
+    const r = await correr(e, ["install", "claude-code"], { input: "" });
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stderr).toBe("");
+    const lineas = r.stdout.trimEnd().split("\n");
+    expect(lineas).toHaveLength(3);
+    for (const linea of lineas) expect(linea).toMatch(/^· /);
+    expect(r.stdout).not.toMatch(/\?|: $/m);
+  });
 
-    const conFlag = await correr(e, ["install", "claude-code", "--excluir", "example.org/acme", "--excluir", "/tmp/acme"]);
-    expect(conFlag.code, conFlag.stderr).toBe(0);
-    const config = JSON.parse(readFileSync(join(e.datos, "config.json"), "utf8"));
-    expect(config.exclusion.patrones).toEqual(["example.org/acme", "/tmp/acme"]);
-
-    const otraVez = await correr(e, ["install", "claude-code"]);
-    expect(otraVez.stdout).toMatch(/se conservan los 2 patrón/);
-    await correr(e, ["uninstall", "claude-code"]);
-    expect(JSON.parse(readFileSync(join(e.datos, "config.json"), "utf8")).exclusion.patrones).toHaveLength(2);
+  it("una configuración con claves que ya no existen no impide instalar", async () => {
+    e = await entornoCli();
+    mkdirSync(e.datos, { recursive: true });
+    const previa = `${JSON.stringify({ clave_retirada: { patrones: ["example.org/acme"] } }, null, 2)}\n`;
+    writeFileSync(join(e.datos, "config.json"), previa);
+    const r = await correr(e, ["install", "claude-code"]);
+    expect(r.code, r.stderr).toBe(0);
+    expect(readFileSync(join(e.datos, "config.json"), "utf8")).toBe(previa);
   });
 
   it("sin «claude» en el PATH, install falla sin tocar nada", async () => {

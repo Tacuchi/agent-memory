@@ -65,4 +65,3 @@ con `memory_get` o `memory_search`.
 
 - Si una herramienta dice que el servicio no responde, decíselo a la persona y sugerí
   `agent-memory start`; no inventes lo que habría devuelto.
-- Si dice «repo excluido», en este repo la memoria está apagada: no intentes guardar ni buscar.

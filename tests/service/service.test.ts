@@ -188,7 +188,7 @@ describe("agent-memory serve", () => {
     asegurarBuild();
     const { dir, limpiar } = dirTemporal("agent-memory-serve-");
     const port = await puertoLibre();
-    const hijo = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, "serve"], {
+    const hijo = spawn(process.execPath, [CLI, "serve"], {
       env: { ...process.env, AGENT_MEMORY_HOME: dir, AGENT_MEMORY_PORT: String(port) },
       stdio: ["ignore", "ignore", "pipe"],
     });

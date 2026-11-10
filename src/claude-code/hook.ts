@@ -1,7 +1,6 @@
 import { ClienteServicio } from "../client.js";
 import { cargarConfig } from "../config.js";
-import { contextoCliente } from "../context.js";
-import { contextoExcluido } from "../exclusion.js";
+import { resolverContexto } from "../context.js";
 import type { Indice } from "../indice/indice.js";
 import { arrancarSeparado } from "../service/daemon.js";
 
@@ -17,10 +16,7 @@ export async function hookSessionStart(entrada: EntradaHook, env: NodeJS.Process
   try {
     const config = cargarConfig(env);
     esperaMs = config.esperaHookMs;
-    const contexto = contextoCliente(entrada.cwd ?? process.cwd(), { proyectos: config.proyectos });
-    if (contextoExcluido(contexto, config.exclusion)) {
-      return "agent-memory: repo excluido; en esta sesión no hay índice y la memoria no guarda ni devuelve entradas.";
-    }
+    const contexto = resolverContexto(entrada.cwd ?? process.cwd(), { proyectos: config.proyectos });
     const trabajo = (async () => {
       const arranque = await arrancarSeparado(config, esperaMs);
       if (!arranque.salud) return avisoSinServicio(esperaMs);

@@ -1,7 +1,5 @@
 import { z } from "zod";
-import type { Exclusion } from "../config.js";
 import { ambitoPorDefecto } from "../context.js";
-import { contextoExcluido, errorExcluido } from "../exclusion.js";
 import { join, isAbsolute } from "node:path";
 import { exportar } from "../export/export.js";
 import { armarIndice } from "../indice/indice.js";
@@ -17,9 +15,7 @@ import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "./vi
 // y en el almacén. MCP, CLI y web solo traducen a estas operaciones.
 
 const id = z.number().int().positive();
-const contextoObligatorio = z
-  .object({ repo: z.string().min(1).nullable(), proyecto: z.string().min(1).nullable(), ruta: z.string().min(1).nullable().optional() })
-  .strict();
+const contextoObligatorio = z.object({ repo: z.string().min(1).nullable(), proyecto: z.string().min(1).nullable() }).strict();
 const contexto = contextoObligatorio.optional();
 const filtros = z
   .object({
@@ -90,8 +86,6 @@ export const OPERACIONES = Object.keys(ESQUEMAS) as Operacion[];
 const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito", "fusionar", "confirmar_vigencia"]);
 
 export interface OpcionesApi {
-  /** Patrones de repos excluidos, o cómo leerlos en cada petición; por defecto, ninguno. */
-  exclusion?: Exclusion | (() => Exclusion);
   /** Tope del índice de inicio cuando el cliente no manda uno. */
   topeIndice?: number;
   /** Umbrales en días de la vista de revisión. */
@@ -101,7 +95,6 @@ export interface OpcionesApi {
 }
 
 export class Api {
-  private readonly exclusion: () => Exclusion;
   private readonly topeIndice: number;
   private readonly umbrales: Umbrales;
   private readonly dirExportaciones: string | null;
@@ -112,8 +105,6 @@ export class Api {
     private readonly version: string,
     opciones: OpcionesApi = {},
   ) {
-    const exclusion = opciones.exclusion ?? { patrones: [], excepciones: [] };
-    this.exclusion = typeof exclusion === "function" ? exclusion : () => exclusion;
     this.topeIndice = opciones.topeIndice ?? 1500;
     this.umbrales = opciones.umbralesRevision ?? { diasSinUso: 90, diasSinVerificar: 180 };
     this.dirExportaciones = opciones.dirExportaciones ?? null;
@@ -127,22 +118,8 @@ export class Api {
     if (SOLO_PERSONA.has(op) && actor !== "persona") {
       throw new ReglaError("solo_persona", `«${op}» lo hace la persona desde la web, no el agente`);
     }
-    const datos = ESQUEMAS[op].parse(this.sinContextoAjeno(op, cuerpo, actor)) as never;
+    const datos = ESQUEMAS[op].parse(cuerpo ?? {}) as never;
     return this[op](datos, actor);
-  }
-
-  /**
-   * Toda operación del agente acepta el contexto del cliente: si es un repo excluido, no se
-   * guarda ni se devuelve nada. Las operaciones que no lo usan lo reciben solo para este control.
-   */
-  private sinContextoAjeno(op: Operacion, cuerpo: unknown, actor: Actor): unknown {
-    const datos = (cuerpo ?? {}) as Record<string, unknown>;
-    if (typeof datos !== "object" || Array.isArray(datos) || !("contexto" in datos)) return datos;
-    const ctx = contextoObligatorio.parse(datos.contexto);
-    if (actor === "agente" && contextoExcluido(ctx, this.exclusion())) throw errorExcluido();
-    if ("contexto" in ESQUEMAS[op].shape) return datos;
-    const { contexto: _usado, ...resto } = datos;
-    return resto;
   }
 
   private indice(d: z.infer<typeof ESQUEMAS.indice>) {

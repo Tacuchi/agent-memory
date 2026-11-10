@@ -88,7 +88,7 @@ export interface Corrida {
 export function correr(e: Pick<EntornoCli, "env">, args: string[], opciones: { input?: string; cwd?: string } = {}): Promise<Corrida> {
   const inicio = Date.now();
   return new Promise((resolve, reject) => {
-    const hijo = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", CLI, ...args], {
+    const hijo = spawn(process.execPath, [CLI, ...args], {
       env: e.env,
       cwd: opciones.cwd ?? (e.env.HOME as string),
       stdio: ["pipe", "pipe", "pipe"],
@@ -107,7 +107,7 @@ export function correr(e: Pick<EntornoCli, "env">, args: string[], opciones: { i
 export async function clienteMcp(e: Pick<EntornoCli, "env">, cwd: string): Promise<Client> {
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: ["--disable-warning=ExperimentalWarning", CLI, "mcp"],
+    args: [CLI, "mcp"],
     cwd,
     env: e.env as Record<string, string>,
     stderr: "pipe",

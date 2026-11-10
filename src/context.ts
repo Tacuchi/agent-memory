@@ -24,16 +24,6 @@ export function resolverContexto(cwd: string, opciones: OpcionesContexto = {}): 
 }
 
 /**
- * Contexto que mandan el MCP, la CLI y el hook: repo y proyecto más la carpeta de trabajo (raíz
- * del repo si hay uno), que el servicio solo compara como texto para la exclusión.
- */
-export function contextoCliente(cwd: string, opciones: OpcionesContexto = {}): Contexto & { ruta: string } {
-  const dir = canonica(cwd);
-  const raiz = git(dir, ["rev-parse", "--show-toplevel"]);
-  return { ...resolverContexto(dir, opciones), ruta: raiz ? canonica(raiz) : dir };
-}
-
-/**
  * Ámbito por defecto de una entrada nueva: una preferencia va a global; lo demás, al
  * proyecto, si no al repo, si no a global.
  */

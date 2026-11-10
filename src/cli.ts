@@ -1,4 +1,4 @@
-#!/usr/bin/env -S node --disable-warning=ExperimentalWarning
+#!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -8,7 +8,7 @@ import { desinstalarClaudeCode, instalarClaudeCode } from "./claude-code/install
 import { hookSessionStart, leerEntradaHook } from "./claude-code/hook.js";
 import { ClienteServicio, ErrorServicio } from "./client.js";
 import { cargarConfig } from "./config.js";
-import { contextoCliente } from "./context.js";
+import { resolverContexto } from "./context.js";
 import { diagnosticar, formatearHallazgos } from "./doctor.js";
 import { servirMcp } from "./mcp/server.js";
 import { arrancarServicio } from "./service/app.js";
@@ -40,7 +40,6 @@ memoria:
 agentes:
   mcp                       servidor MCP por stdio con las herramientas memory_*
   install claude-code       conecta Claude Code: MCP, hook de inicio y skill
-          [--excluir <patrón>]...   repos excluidos (remoto, organización o ruta)
   uninstall claude-code     quita exactamente lo que agregó install
   hook session-start        hook SessionStart de Claude Code (lo llama Claude Code)
 
@@ -129,7 +128,7 @@ async function serve(): Promise<number> {
 
 async function mcp(): Promise<number> {
   const config = cargarConfig();
-  await servirMcp(new ClienteServicio(config), contextoCliente(process.cwd(), { proyectos: config.proyectos }));
+  await servirMcp(new ClienteServicio(config), resolverContexto(process.cwd(), { proyectos: config.proyectos }));
   return 0;
 }
 
@@ -285,7 +284,7 @@ async function search(args: string[]): Promise<number> {
   const config = cargarConfig();
   const r = await new ClienteServicio(config).llamar<{ modo: string; aviso: string | null; resultados: Resultado[] }>("buscar", {
     consulta,
-    contexto: contextoCliente(process.cwd(), { proyectos: config.proyectos }),
+    contexto: resolverContexto(process.cwd(), { proyectos: config.proyectos }),
     ...(limite ? { limite } : {}),
     ...(values.todos ? { filtros: { todos_los_ambitos: true } } : {}),
   });
@@ -299,15 +298,8 @@ async function search(args: string[]): Promise<number> {
 }
 
 async function install(args: string[]): Promise<number> {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { excluir: { type: "string", multiple: true } } });
-  if (positionals.join(" ") !== "claude-code") return uso("uso: agent-memory install claude-code [--excluir <patrón>]...");
-  const interactivo = Boolean(process.stdin.isTTY && process.stdout.isTTY);
-  const informe = await instalarClaudeCode({
-    env: process.env,
-    excluir: values.excluir ?? [],
-    ...(interactivo ? { preguntar } : {}),
-  });
-  return salida(informe.map((l) => `· ${l}`).join("\n"));
+  if (args.join(" ") !== "claude-code") return uso("uso: agent-memory install claude-code");
+  return salida(instalarClaudeCode(process.env).map((l) => `· ${l}`).join("\n"));
 }
 
 /** Una línea de stdin; si stdin se cierra sin respuesta, devuelve vacío (nunca queda colgada). */
@@ -325,15 +317,6 @@ function leerLinea(pregunta: string): Promise<string> {
       if (!respondida) resolve("");
     });
   });
-}
-
-async function preguntar(pregunta: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    return await rl.question(pregunta);
-  } finally {
-    rl.close();
-  }
 }
 
 async function uninstall(args: string[]): Promise<number> {

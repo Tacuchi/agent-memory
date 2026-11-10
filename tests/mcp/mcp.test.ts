@@ -61,7 +61,7 @@ beforeAll(async () => {
 
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: ["--disable-warning=ExperimentalWarning", CLI, "mcp"],
+    args: [CLI, "mcp"],
     cwd: carpeta,
     env: { ...(process.env as Record<string, string>), AGENT_MEMORY_HOME: s.home, AGENT_MEMORY_PORT: String(s.app.port) },
     stderr: "pipe",
@@ -222,7 +222,7 @@ describe("agent-memory mcp con un cliente MCP genérico", () => {
     const otro = await servicioDePrueba();
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: ["--disable-warning=ExperimentalWarning", CLI, "mcp"],
+      args: [CLI, "mcp"],
       cwd: carpeta,
       env: { ...(process.env as Record<string, string>), AGENT_MEMORY_HOME: otro.home, AGENT_MEMORY_PORT: String(otro.app.port) },
       stderr: "pipe",

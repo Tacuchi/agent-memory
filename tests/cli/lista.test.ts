@@ -6,7 +6,7 @@ import { asegurarBuild } from "../helpers/servicio.js";
 // La ayuda lista arrancar, parar y estado; abrir la web y buscar; exportar; instalar y
 // desinstalar; diagnosticar; purgar. Y cada comando responde, en un HOME temporal.
 
-const AC28 = ["start", "stop", "status", "open", "search", "export", "install claude-code", "uninstall claude-code", "doctor", "purge"];
+const COMANDOS_DE_LA_AYUDA = ["start", "stop", "status", "open", "search", "export", "install claude-code", "uninstall claude-code", "doctor", "purge"];
 
 let e: EntornoCli;
 beforeAll(async () => {
@@ -19,7 +19,7 @@ describe("lista de comandos", () => {
   it("la ayuda lista todos los comandos del producto", async () => {
     const ayuda = await correr(e, ["--help"]);
     expect(ayuda.code).toBe(0);
-    for (const c of AC28) expect(ayuda.stdout).toMatch(new RegExp(`^\\s+${c}\\b`, "m"));
+    for (const c of COMANDOS_DE_LA_AYUDA) expect(ayuda.stdout).toMatch(new RegExp(`^\\s+${c}\\b`, "m"));
   });
 
   it("cada comando responde", async () => {
@@ -29,7 +29,7 @@ describe("lista de comandos", () => {
       [["open", "--imprimir"], 0, /\/sesion\/[0-9a-f]{64}/],
       [["search", "algo"], 0, /sin resultados/],
       [["export", "--destino", join(e.raiz, "exportado")], 0, /0 entradas exportadas/],
-      [["install", "claude-code", "--excluir", "example.org/acme"], 0, /exclusión: 1 patrón/],
+      [["install", "claude-code"], 0, /MCP «agent-memory» registrado/],
       [["doctor"], -1, /servicio/],
       [["uninstall", "claude-code"], 0, /./],
       [["purge", "1", "--confirmar", "1"], 1, /no existe la entrada 1/],

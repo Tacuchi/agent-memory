@@ -4,8 +4,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
-import { escribirArchivoConfig, homeDatos, leerArchivoConfig } from "../config.js";
-import { argumentosNode } from "../service/daemon.js";
+import { homeDatos } from "../config.js";
+import { argumentosNode, rutaCli } from "../service/daemon.js";
 
 // Conexión con Claude Code, aislada en este módulo: MCP con `claude mcp add`, hook
 // `SessionStart` en settings.json y la skill. Idempotente; la desinstalación quita exactamente eso.
@@ -42,8 +42,7 @@ export function citar(texto: string): string {
 }
 
 export function comandoHook(): string {
-  const [flag, cli] = argumentosNode();
-  return `${MARCA_HOOK} ${citar(process.execPath)} ${flag} ${citar(cli!)} hook session-start`;
+  return `${MARCA_HOOK} ${citar(process.execPath)} ${citar(rutaCli())} hook session-start`;
 }
 
 export function argumentosMcp(): string[] {
@@ -139,16 +138,8 @@ function escribirSettings(ruta: string, datos: Settings): void {
   writeFileSync(ruta, `${JSON.stringify(datos, null, 2)}\n`);
 }
 
-export interface OpcionesInstalar {
-  env: NodeJS.ProcessEnv;
-  /** Patrones de `--excluir`. */
-  excluir: string[];
-  /** Pregunta en terminal interactiva; ausente = sin terminal. */
-  preguntar?: (pregunta: string) => Promise<string>;
-}
-
-export async function instalarClaudeCode(opciones: OpcionesInstalar): Promise<string[]> {
-  const { env } = opciones;
+/** Nunca pregunta nada ni lee la entrada estándar: corre igual en una terminal que desde un script. */
+export function instalarClaudeCode(env: NodeJS.ProcessEnv): string[] {
   const informe: string[] = [];
   if (!claudeDisponible(env)) {
     throw new Error("«claude» no está en el PATH: instalá Claude Code y repetí «agent-memory install claude-code»; no se tocó nada");
@@ -156,10 +147,7 @@ export async function instalarClaudeCode(opciones: OpcionesInstalar): Promise<st
   const rutas = rutasClaude(env);
   const { texto, datos } = leerSettings(rutas.settings);
 
-  // 1. Exclusión primero: un repo excluido queda protegido antes de que el hook inyecte nada.
-  informe.push(...(await guardarExclusion(opciones)));
-
-  // 2. MCP: quitar y volver a agregar deja una sola entrada con la ruta actual.
+  // 1. MCP: quitar y volver a agregar deja una sola entrada con la ruta actual.
   try {
     claude(["mcp", "remove", NOMBRE_MCP, "--scope", "user"], env);
   } catch {
@@ -168,7 +156,7 @@ export async function instalarClaudeCode(opciones: OpcionesInstalar): Promise<st
   claude(argumentosMcp(), env);
   informe.push(`MCP «${NOMBRE_MCP}» registrado con «claude mcp add --scope user»`);
 
-  // 3. Hook SessionStart, sin tocar los demás.
+  // 2. Hook SessionStart, sin tocar los demás.
   if (!existsSync(rutas.estado)) {
     mkdirSync(dirname(rutas.estado), { recursive: true, mode: 0o700 });
     writeFileSync(rutas.estado, `${JSON.stringify({ settings_previo: texto }, null, 2)}\n`, { mode: 0o600 });
@@ -176,34 +164,12 @@ export async function instalarClaudeCode(opciones: OpcionesInstalar): Promise<st
   escribirSettings(rutas.settings, conHookPropio(datos));
   informe.push(`hook SessionStart en ${rutas.settings}`);
 
-  // 4. Skill.
+  // 3. Skill.
   rmSync(rutas.skill, { recursive: true, force: true });
   mkdirSync(dirname(rutas.skill), { recursive: true });
   cpSync(origenSkill(), rutas.skill, { recursive: true });
   informe.push(`skill agent-memory en ${rutas.skill}`);
   return informe;
-}
-
-async function guardarExclusion(opciones: OpcionesInstalar): Promise<string[]> {
-  const ruta = join(homeDatos(opciones.env), "config.json");
-  const archivo = leerArchivoConfig(ruta);
-  const actuales = archivo.exclusion?.patrones ?? [];
-  let nuevos = opciones.excluir.map((p) => p.trim()).filter(Boolean);
-  if (nuevos.length === 0 && opciones.preguntar) {
-    const respuesta = await opciones.preguntar(
-      "Patrones de repos a excluir de la memoria (remoto, organización o ruta; separados por coma; vacío = ninguno nuevo): ",
-    );
-    nuevos = respuesta.split(",").map((p) => p.trim()).filter(Boolean);
-  }
-  const patrones = [...new Set([...actuales, ...nuevos])];
-  if (nuevos.length) {
-    escribirArchivoConfig(ruta, { ...archivo, exclusion: { ...archivo.exclusion, patrones } });
-    return [`exclusión: ${patrones.length} patrón(es) en ${ruta}`];
-  }
-  if (patrones.length) return [`exclusión: se conservan los ${patrones.length} patrón(es) de ${ruta}`];
-  return [
-    `exclusión: lista vacía, ningún repo queda excluido; agregá patrones con «agent-memory install claude-code --excluir <patrón>» o en ${ruta}`,
-  ];
 }
 
 export function desinstalarClaudeCode(env: NodeJS.ProcessEnv): string[] {
@@ -233,7 +199,6 @@ export function desinstalarClaudeCode(env: NodeJS.ProcessEnv): string[] {
     rmSync(rutas.skill, { recursive: true, force: true });
     informe.push(`skill quitada de ${rutas.skill}`);
   }
-  informe.push("la configuración de agent-memory (~/.agent-memory/config.json, con la exclusión) queda intacta");
   return informe;
 }
 
