@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: package smoke test
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack" "$RUNNER_TEMP/global"
+          npm pack --pack-destination "$RUNNER_TEMP/pack"
+          npm install -g --prefix "$RUNNER_TEMP/global" "$RUNNER_TEMP"/pack/tacuchi-agent-memory-*.tgz
+          if [ "$RUNNER_OS" = "Windows" ]; then bin="$RUNNER_TEMP/global"; else bin="$RUNNER_TEMP/global/bin"; fi
+          export PATH="$bin:$PATH"
+          agent-memory --version
+          export AGENT_MEMORY_HOME="$RUNNER_TEMP/am-home"
+          agent-memory doctor | tee "$RUNNER_TEMP/doctor.txt" || true
+          grep -E "^ok +sqlite-vec:" "$RUNNER_TEMP/doctor.txt"
