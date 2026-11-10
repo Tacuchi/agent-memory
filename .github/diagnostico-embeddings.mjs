@@ -1,84 +1,48 @@
-// TEMPORAL: diagnóstico de la búsqueda por vector según el sistema. Se borra antes de cerrar la rama.
-// Imprime, para tres paráfrasis del conjunto, los primeros valores y la norma de los embeddings, el coseno en JS
-// contra la distancia de sqlite-vec y el puesto de la entrada esperada por cada camino.
-import { readFileSync } from "node:fs";
+// TEMPORAL: diagnóstico de la búsqueda por vector según la CPU. Se borra antes de cerrar la rama.
+// Mide el conjunto de consultas con cada variante del modelo publicado (q8, uint8, fp32) e imprime la CPU del runner.
+import { mkdtempSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { cpus, tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const raiz = pathToFileURL(`${process.cwd()}/`).href;
 const { TransformersEmbedder } = await import(`${raiz}dist/search/embedder.js`);
 const { modeloFijado } = await import(`${raiz}dist/search/models.js`);
-const { openDatabase, vectorBlob } = await import(`${raiz}dist/db/driver.js`);
+const { leerConjunto, medir, PUESTO_MAXIMO_PARAFRASIS } = await import(`${raiz}dist/search/medir.js`);
 
-const conjunto = JSON.parse(readFileSync("tests/fixtures/consultas-es.json", "utf8"));
-const consultas = ["problema de husos al calcular caducidades", "guardar todo en un fichero sin motor externo", "cómo nombrar una branch nueva"];
-const embedder = new TransformersEmbedder(modeloFijado());
-const f = (v) => Array.from(v.slice(0, 5), (x) => x.toFixed(6)).join(" ");
-const norma = (v) => Math.sqrt(v.reduce((s, x) => s + x * x, 0));
-const coseno = (a, b) => a.reduce((s, x, i) => s + x * b[i], 0) / (norma(a) * norma(b));
+let flags = "";
+try {
+  flags = readFileSync("/proc/cpuinfo", "utf8").match(/^flags\s*:(.*)$/m)?.[1] ?? "";
+} catch {}
+const tiene = (f) => (flags ? (` ${flags} `.includes(` ${f} `) ? "sí" : "no") : "?");
+console.log(`plataforma ${process.platform} ${process.arch} · CPU ${cpus()[0]?.model} · avx2 ${tiene("avx2")} · avx512_vnni ${tiene("avx512_vnni")} · avx_vnni ${tiene("avx_vnni")}`);
 
-console.log(`plataforma ${process.platform} ${process.arch} · node ${process.version}`);
-const corpus = [];
-for (const e of conjunto.corpus) corpus.push({ clave: e.clave, v: await embedder.embedPassage(`${e.titulo}\n${e.contenido}`) });
-const db = openDatabase(":memory:");
-db.exec(`CREATE VIRTUAL TABLE t USING vec0(embedding float[${corpus[0].v.length}])`);
-const insertar = db.prepare("INSERT INTO t(rowid, embedding) VALUES (?, ?)");
-corpus.forEach((c, i) => insertar.run(BigInt(i + 1), vectorBlob(c.v)));
-const distancia = db.prepare("SELECT vec_distance_cosine(?, ?) AS c, vec_distance_l2(?, ?) AS l");
-const knn = db.prepare("SELECT rowid AS id, distance FROM t WHERE embedding MATCH ? AND k = ? ORDER BY distance");
-
-for (const texto of consultas) {
-  const c = conjunto.consultas.find((x) => x.consulta === texto);
-  const esperada = corpus.find((x) => x.clave === c.esperada);
-  const q = await embedder.embedQuery(texto);
-  const d = distancia.get(vectorBlob(q), vectorBlob(esperada.v), vectorBlob(q), vectorBlob(esperada.v));
-  const porJs = corpus.map((x) => ({ clave: x.clave, s: coseno(q, x.v) })).sort((a, b) => b.s - a.s);
-  const porVec = knn.all(vectorBlob(q), corpus.length).map((r) => corpus[Number(r.id) - 1].clave);
-  console.log(`\nconsulta «${texto}» → esperada ${c.esperada}`);
-  console.log(`  q[0..4] ${f(q)} · norma ${norma(q).toFixed(6)}`);
-  console.log(`  e[0..4] ${f(esperada.v)} · norma ${norma(esperada.v).toFixed(6)}`);
-  console.log(`  coseno JS ${coseno(q, esperada.v).toFixed(6)} · sqlite-vec 1-cos ${(1 - d.c).toFixed(6)} · l2 ${d.l.toFixed(6)}`);
-  console.log(`  puesto JS ${porJs.findIndex((x) => x.clave === c.esperada) + 1} · puesto vec0 ${porVec.indexOf(c.esperada) + 1}`);
-  console.log(`  top3 JS ${porJs.slice(0, 3).map((x) => `${x.clave}=${x.s.toFixed(4)}`).join(", ")}`);
-}
-db.close();
-
-// Segunda pasada: archivos del modelo, tokens, pooling y, en Windows, fp32 frente a q8.
-const { createHash } = await import("node:crypto");
-const { readdirSync, statSync, mkdtempSync } = await import("node:fs");
-const { join } = await import("node:path");
-const { tmpdir } = await import("node:os");
-const { cacheModelos } = await import(`${raiz}dist/search/models.js`);
-const modelo = modeloFijado();
-const carpeta = join(cacheModelos(), ...modelo.id.split("/"));
-const listar = (dir, prefijo = "") =>
-  readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? listar(join(dir, n), `${prefijo}${n}/`) : [`${prefijo}${n}`]));
-console.log("\narchivos del modelo:");
-for (const archivo of listar(carpeta)) {
-  const ruta = join(carpeta, archivo);
-  console.log(`  ${archivo} ${statSync(ruta).size} B sha256 ${createHash("sha256").update(readFileSync(ruta)).digest("hex").slice(0, 16)}`);
-}
-const tf = await import("@huggingface/transformers");
-tf.env.cacheDir = cacheModelos();
-tf.env.localModelPath = cacheModelos();
-tf.env.allowLocalModels = true;
-tf.env.allowRemoteModels = false;
-const frase = "cómo nombrar una branch nueva";
-const tokenizer = await tf.AutoTokenizer.from_pretrained(modelo.id);
-console.log(`tokens «${frase}»: ${JSON.stringify(Array.from(tokenizer(frase).input_ids.data, Number))}`);
-const extractor = await tf.pipeline("feature-extraction", modelo.id, { dtype: modelo.dtype });
-for (const pooling of ["cls", "mean"]) {
-  const crudo = (await extractor(frase, { pooling, normalize: false })).data;
-  const max = crudo.reduce((m, x, i) => (Math.abs(x) > Math.abs(m.v) ? { i, v: x } : m), { i: -1, v: 0 });
-  console.log(`q8 ${pooling} sin normalizar: [0..4] ${f(crudo)} · norma ${norma(crudo).toFixed(4)} · máx |x| dim ${max.i} = ${max.v.toFixed(4)}`);
-}
-const todo = (await extractor(frase, { pooling: "none", normalize: false }));
-console.log(`q8 sin pooling: dims ${JSON.stringify(todo.dims)} · token0[0..4] ${f(todo.data)} · token1[0..4] ${f(todo.data.slice(todo.dims[2]))}`);
-if (process.platform === "win32") {
-  const otra = mkdtempSync(join(tmpdir(), "diag-fp32-"));
-  tf.env.cacheDir = otra;
-  tf.env.localModelPath = otra;
-  tf.env.allowRemoteModels = true;
-  const fp32 = await tf.pipeline("feature-extraction", modelo.id, { dtype: "fp32" });
-  const q = (await fp32(frase, { pooling: modelo.pooling, normalize: true })).data;
-  console.log(`fp32 en Windows: q[0..4] ${f(q)}`);
+const conjunto = leerConjunto("tests/fixtures/consultas-es.json");
+const embeddings = conjunto.corpus.length + conjunto.consultas.length;
+// Autochequeo candidato: un par de paráfrasis debe parecerse bastante más que un par sin relación.
+const A = "reintentar con espera exponencial ante un error 503";
+const B = "volver a intentar duplicando la pausa cuando el servidor no responde";
+const C = "la receta del pan lleva harina, agua y sal";
+const cos = (x, y) => x.reduce((s, v, i) => s + v * y[i], 0);
+for (const dtype of ["q8", "uint8", "fp16", "fp32"]) {
+  try {
+    const modelo = { ...modeloFijado(), dtype };
+    const cache = mkdtempSync(join(tmpdir(), `diag-${dtype}-`));
+    await new TransformersEmbedder(modelo, { cache, permitirRed: true }).cargar();
+    const onnx = join(cache, ...modelo.id.split("/"), "onnx");
+    const mb = readdirSync(onnx).reduce((s, n) => s + statSync(join(onnx, n)).size, 0) / 1e6;
+    const t = Date.now();
+    const m = await medir(conjunto, modelo, cache);
+    const ms = (Date.now() - t) / embeddings;
+    const puestos = m.rangos.filter((r) => r.clase === "parafrasis").map((r) => r.rango ?? "-").join(" ");
+    const nombres = m.rangos.filter((r) => r.clase === "nombre_exacto").map((r) => r.rango ?? "-").join(" ");
+    const e = new TransformersEmbedder(modelo, { cache });
+    const [a, b, c] = [await e.embedQuery(A), await e.embedPassage(B), await e.embedPassage(C)];
+    const dominante = Math.max(...Array.from(a, Math.abs));
+    console.log(
+      `${dtype}: ${mb.toFixed(0)} MB · ${ms.toFixed(1)} ms/embedding (con carga e índice) · pasa top${PUESTO_MAXIMO_PARAFRASIS} ${m.pasa} · paráfrasis ${puestos} · nombres ${nombres} · autochequeo cos(par)=${cos(a, b).toFixed(4)} cos(ajeno)=${cos(a, c).toFixed(4)} margen=${(cos(a, b) - cos(a, c)).toFixed(4)} máx|x|=${dominante.toFixed(4)}`,
+    );
+  } catch (error) {
+    console.log(`${dtype}: ERROR ${error.message}`);
+  }
 }
