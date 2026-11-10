@@ -124,17 +124,17 @@ export class Buscador {
 
   private async rankVector(consulta: string, filtros: Filtros): Promise<{ modo: Modo; aviso: string | null; ids: number[] }> {
     if (!this.embedder) return texto("no hay modelo de embeddings configurado");
-    const conVector = this.store.db
-      .prepare("SELECT count(*) AS n FROM vectores WHERE estado = 'ok' AND model_id = ?")
-      .get(this.embedder.modelId) as { n: number };
-    if (conVector.n === 0) return texto("la base no tiene vectores del modelo actual");
-
+    // El modelo primero: sin él, la base tampoco tiene vectores y el aviso debe decir cómo traerlo.
     let vector: Float32Array;
     try {
       vector = await this.embedder.embedQuery(consulta);
     } catch (error) {
       return texto(`el modelo de embeddings no está disponible (${(error as Error).message})`);
     }
+    const conVector = this.store.db
+      .prepare("SELECT count(*) AS n FROM vectores WHERE estado = 'ok' AND model_id = ?")
+      .get(this.embedder.modelId) as { n: number };
+    if (conVector.n === 0) return texto("la base no tiene vectores del modelo actual");
 
     const { sql, params } = clausulaFiltros(filtros, this.store.ahora());
     const filas = this.store.db

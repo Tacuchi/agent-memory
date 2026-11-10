@@ -163,7 +163,8 @@ describe("argumentos (parseArgs)", () => {
     expect((await correr(e, ["start", "ya"])).code).toBe(2);
     expect((await correr(e, ["search"])).code).toBe(2);
     const ayuda = await correr(e, ["--help"]);
-    for (const c of ["start", "stop", "status", "search", "doctor", "install claude-code", "uninstall claude-code", "hook session-start"]) {
+    expect((await correr(e, ["model", "traer"])).code).toBe(2);
+    for (const c of ["start", "stop", "status", "search", "doctor", "model fetch", "install claude-code", "uninstall claude-code", "hook session-start"]) {
       expect(ayuda.stdout).toContain(c);
     }
   });

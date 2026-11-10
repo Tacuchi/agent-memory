@@ -7,18 +7,18 @@ type Extractor = (texto: string, opciones: { pooling: "mean" | "cls"; normalize:
 
 export class ModeloNoDisponible extends Error {
   constructor(modelo: string, cache: string) {
-    super(`el modelo ${modelo} no está en la caché local (${cache}); traelo una vez con: npm run model:fetch`);
+    super(`el modelo ${modelo} no está en la caché local (${cache}); traelo una vez con: agent-memory model fetch`);
     this.name = "ModeloNoDisponible";
   }
 }
 
 export interface OpcionesEmbedder {
   cache?: string;
-  /** Solo `model:fetch` habilita la red; el resto corre sin red. */
+  /** Solo `agent-memory model fetch` habilita la red; el resto corre sin red. */
   permitirRed?: boolean;
 }
 
-/** Embeddings locales por transformers.js/ONNX. Sin red salvo en `model:fetch`. */
+/** Embeddings locales por transformers.js/ONNX. Sin red salvo en `agent-memory model fetch`. */
 export class TransformersEmbedder implements Embedder {
   readonly modelId: string;
   readonly dims: number;

@@ -138,9 +138,43 @@ function escribirSettings(ruta: string, datos: Settings): void {
   writeFileSync(ruta, `${JSON.stringify(datos, null, 2)}\n`);
 }
 
+/**
+ * true si la ruta está en una ubicación que se borra sola: el caché de `npx` (segmento `_npx`) o
+ * la carpeta temporal de `bunx` (`bunx-<uid>-<paquete>@<versión>`). Se mira por segmentos de ruta,
+ * no por variables de entorno de npm, que cambian entre versiones.
+ */
+export function rutaEfimera(ruta: string): boolean {
+  return ruta.split(/[\\/]+/).some((segmento) => segmento === "_npx" || segmento.startsWith("bunx-"));
+}
+
+/** Las rutas que el hook propio registró (node y cli.js), o null si no hay hook propio legible. */
+export function rutasHook(env: NodeJS.ProcessEnv): string[] | null {
+  let grupos: unknown;
+  try {
+    grupos = leerSettings(rutasClaude(env).settings).datos.hooks?.SessionStart;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(grupos)) return null;
+  const comando = (grupos as GrupoHook[])
+    .flatMap((g) => g.hooks ?? [])
+    .map((h) => h.command)
+    .find((c): c is string => typeof c === "string" && c.includes(MARCA_HOOK));
+  if (!comando) return null;
+  // Cada ruta va entre comillas simples (ver `citar`): '…' con '\'' por cada comilla interna.
+  return [...comando.matchAll(/'((?:[^']|'\\'')*)'/g)].map((m) => (m[1] as string).replaceAll(`'\\''`, "'"));
+}
+
 /** Nunca pregunta nada ni lee la entrada estándar: corre igual en una terminal que desde un script. */
 export function instalarClaudeCode(env: NodeJS.ProcessEnv): string[] {
   const informe: string[] = [];
+  const efimera = [rutaCli(), process.execPath].find(rutaEfimera);
+  if (efimera) {
+    throw new Error(
+      `esta copia corre desde una ubicación temporal (${efimera}) que npx o bunx pueden borrar, y Claude Code quedaría apuntando a una ruta rota. ` +
+        "Instalalo de forma permanente con «npm install -g @tacuchi/agent-memory» y repetí «agent-memory install claude-code»; no se tocó nada",
+    );
+  }
   if (!claudeDisponible(env)) {
     throw new Error("«claude» no está en el PATH: instalá Claude Code y repetí «agent-memory install claude-code»; no se tocó nada");
   }

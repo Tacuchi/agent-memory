@@ -10,6 +10,7 @@ import { ClienteServicio, ErrorServicio } from "./client.js";
 import { cargarConfig } from "./config.js";
 import { resolverContexto } from "./context.js";
 import { diagnosticar, formatearHallazgos } from "./doctor.js";
+import { traerModelo } from "./model-fetch.js";
 import { servirMcp } from "./mcp/server.js";
 import { arrancarServicio } from "./service/app.js";
 import { arrancarSeparado, borrarPid, detener, escribirPid, leerPid, salud } from "./service/daemon.js";
@@ -17,7 +18,7 @@ import { purgar } from "./purge/purge.js";
 import { MemoryStore } from "./store/store.js";
 import { version } from "./version.js";
 
-// Punto de entrada del bin `agent-memory`, sobre `node:util` `parseArgs`.
+// La CLI `agent-memory`, sobre `node:util` `parseArgs`. El bin entra por bin.js, que antes comprueba Node.
 const AYUDA = `uso: agent-memory <comando> [opciones]
 
 servicio:
@@ -26,6 +27,7 @@ servicio:
   status                    estado: puerto, pid y versión (sale con 3 si está detenido)
   serve                     corre el servicio en primer plano
   doctor                    revisa Node, token, servicio, sqlite-vec, modelo y Claude Code
+  model fetch               descarga el modelo de embeddings a su caché (el único paso con red)
 
 memoria:
   open                      abre la web local con un enlace de un solo uso
@@ -78,6 +80,8 @@ export async function main(argv: string[]): Promise<number> {
       return sinArgs(resto, status);
     case "doctor":
       return sinArgs(resto, doctor);
+    case "model":
+      return model(resto);
     case "open":
       return abrir(resto);
     case "search":
@@ -169,6 +173,12 @@ async function doctor(): Promise<number> {
   const hallazgos = await diagnosticar(config, process.env);
   process.stdout.write(`${formatearHallazgos(hallazgos)}\n`);
   return hallazgos.some((h) => h.nivel === "falla") ? 1 : 0;
+}
+
+async function model(args: string[]): Promise<number> {
+  if (args.join(" ") !== "fetch") return uso("uso: agent-memory model fetch");
+  await traerModelo(process.env, (linea) => process.stdout.write(`${linea}\n`));
+  return 0;
 }
 
 /**

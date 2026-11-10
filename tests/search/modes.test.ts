@@ -71,6 +71,24 @@ describe("modo de búsqueda y degradación", () => {
 });
 
 describe("modelo ausente de la caché (sin red)", () => {
+  it("la primera búsqueda sin modelo encuentra por texto y el aviso nombra «agent-memory model fetch»", async () => {
+    const { TransformersEmbedder } = await import("../../src/search/embedder.js");
+    const { modeloFijado } = await import("../../src/search/models.js");
+    const { dirTemporal } = await import("../helpers/temp.js");
+    const vacio = dirTemporal();
+    const t = storeTemporal();
+    try {
+      await t.store.crear({ tipo: "leccion", titulo: "Bloqueos en SQLite", contenido: "usar busy_timeout", ...enRepo }, persona);
+      const r = await new Buscador(t.store, new TransformersEmbedder(modeloFijado(), { cache: vacio.dir })).buscar("busy_timeout");
+      expect(r.modo).toBe("texto");
+      expect(r.aviso).toContain("agent-memory model fetch");
+      expect(r.resultados.map((x) => x.entrada.titulo)).toEqual(["Bloqueos en SQLite"]);
+    } finally {
+      t.cerrar();
+      vacio.limpiar();
+    }
+  });
+
   it("falla con el comando para traerlo, sin intentar descargarlo", async () => {
     const { TransformersEmbedder } = await import("../../src/search/embedder.js");
     const { modeloFijado } = await import("../../src/search/models.js");
@@ -78,7 +96,7 @@ describe("modelo ausente de la caché (sin red)", () => {
     const vacio = dirTemporal();
     try {
       const embedder = new TransformersEmbedder(modeloFijado(), { cache: vacio.dir });
-      await expect(embedder.embedQuery("hola")).rejects.toThrow(/npm run model:fetch/);
+      await expect(embedder.embedQuery("hola")).rejects.toThrow(/agent-memory model fetch/);
     } finally {
       vacio.limpiar();
     }

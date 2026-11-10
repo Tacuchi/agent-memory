@@ -1,26 +1,39 @@
 {
-  "name": "agent-memory",
+  "name": "@tacuchi/agent-memory",
   "version": "0.1.0",
   "description": "Memoria local para agentes de código: almacén SQLite con búsqueda híbrida, servicio local con token, servidor MCP y conexión con Claude Code.",
   "type": "module",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tacuchi/agent-memory.git"
+  },
+  "homepage": "https://github.com/Tacuchi/agent-memory#readme",
+  "bugs": {
+    "url": "https://github.com/Tacuchi/agent-memory/issues"
+  },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.16.0"
   },
   "bin": {
-    "agent-memory": "dist/cli.js"
+    "agent-memory": "dist/bin.js"
   },
   "files": [
     "dist",
     "skills"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && vite build --config web/vite.config.ts --logLevel warn",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "test": "vitest run",
     "model:measure": "tsc -p tsconfig.build.json && node --disable-warning=ExperimentalWarning dist/medir-modelos.js",
-    "model:fetch": "tsc -p tsconfig.build.json && node --disable-warning=ExperimentalWarning dist/model-fetch.js"
+    "model:fetch": "tsc -p tsconfig.build.json && node dist/cli.js model fetch",
+    "prepack": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",

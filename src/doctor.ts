@@ -1,7 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import type { Config } from "./config.js";
-import { claudeDisponible, hookInstalado, mcpRegistrado, skillInstalada } from "./claude-code/install.js";
+import { claudeDisponible, hookInstalado, mcpRegistrado, rutasHook, skillInstalada } from "./claude-code/install.js";
 import { openDatabase } from "./db/driver.js";
+import { NODE_MINIMO, nodeSuficiente } from "./node-minimo.js";
 import { TransformersEmbedder } from "./search/embedder.js";
 import { cacheModelos, modeloFijado } from "./search/models.js";
 import { leerPid, salud } from "./service/daemon.js";
@@ -19,11 +20,10 @@ export interface Hallazgo {
 
 export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv): Promise<Hallazgo[]> {
   const h: Hallazgo[] = [];
-  const mayor = Number(process.versions.node.split(".")[0]);
   h.push(
-    mayor >= 22
+    nodeSuficiente(process.versions.node)
       ? { nombre: "node", nivel: "ok", detalle: `Node ${process.versions.node}` }
-      : { nombre: "node", nivel: "falla", detalle: `Node ${process.versions.node}`, arreglo: "instalá Node 22 o más nuevo" },
+      : { nombre: "node", nivel: "falla", detalle: `Node ${process.versions.node}`, arreglo: `instalá Node ${NODE_MINIMO} o más nuevo` },
   );
 
   if (!existsSync(config.tokenPath)) {
@@ -66,7 +66,7 @@ export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv): Prom
           nombre: "modelo",
           nivel: "aviso",
           detalle: `falta ${modelo.id} en ${cacheModelos(env)}: la búsqueda queda solo por texto`,
-          arreglo: "traelo una vez con «npm run model:fetch» en el paquete",
+          arreglo: "traelo una vez con «agent-memory model fetch»",
         },
   );
 
@@ -78,10 +78,18 @@ export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv): Prom
       hookInstalado(env) ? null : "hook SessionStart",
       skillInstalada(env) ? null : "skill",
     ].filter((x): x is string => x !== null);
+    const rotas = (rutasHook(env) ?? []).filter((ruta) => !existsSync(ruta));
     h.push(
-      faltan.length === 0
-        ? { nombre: "claude-code", nivel: "ok", detalle: "MCP, hook SessionStart y skill instalados" }
-        : { nombre: "claude-code", nivel: "falla", detalle: `falta: ${faltan.join(", ")}`, arreglo: "«agent-memory install claude-code»" },
+      faltan.length > 0
+        ? { nombre: "claude-code", nivel: "falla", detalle: `falta: ${faltan.join(", ")}`, arreglo: "«agent-memory install claude-code»" }
+        : rotas.length > 0
+          ? {
+              nombre: "claude-code",
+              nivel: "falla",
+              detalle: `el hook y el MCP apuntan a rutas que ya no existen: ${rotas.join(", ")}`,
+              arreglo: "repetí «agent-memory install claude-code»",
+            }
+          : { nombre: "claude-code", nivel: "ok", detalle: "MCP, hook SessionStart y skill instalados" },
     );
   }
   return h;
