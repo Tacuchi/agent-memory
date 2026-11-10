@@ -82,6 +82,15 @@ agent-memory relay --clave-archivo relay.key --puerto 8787   # listens on 127.0.
 - Without the key the relay answers `401` on every path. `curl -i https://<relay>/` should return `401`.
 - The relay keeps nothing and logs no content. It pairs at most two connections per mailbox and caps message size and
   idle time.
+- **Limit failed attempts before exposing it.** The relay compares the key in constant time but does not count
+  attempts. Put a per-IP rate limit in front of it, in the reverse proxy. Repeated `curl -i https://<relay>/` without
+  the key should end in `429`, not in endless `401`s.
+- A health check or uptime monitor can treat the `401` as "up": it proves the proxy and the relay answer without
+  knowing the key.
+
+[`deploy/relay/`](deploy/relay/) has an example: a `Dockerfile` that runs the published package (key only from
+`AGENT_MEMORY_RELAY_KEY`), and Traefik labels for Coolify behind Cloudflare that accept only Cloudflare's ranges and
+rate-limit by the real client IP.
 
 ### 2. Configure the relay on both machines
 
