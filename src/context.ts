@@ -115,7 +115,9 @@ function git(cwd: string, args: string[]): string | null {
 function canonica(ruta: string): string {
   const absoluta = resolve(ruta);
   try {
-    return realpathSync(absoluta);
+    // `native`: en Windows además expande los nombres cortos 8.3 (`RUNNER~1`), así una misma carpeta da
+    // un único id venga del directorio de trabajo o de git, que siempre la devuelve con el nombre largo.
+    return realpathSync.native(absoluta);
   } catch {
     return absoluta;
   }

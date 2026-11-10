@@ -1,10 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, type ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 import { homeDatos } from "../config.js";
+import { invocacion } from "../ejecutable.js";
 import { argumentosNode, rutaCli } from "../service/daemon.js";
 
 // Conexión con Claude Code, aislada en este módulo: MCP con `claude mcp add`, hook
@@ -49,10 +50,23 @@ export function argumentosMcp(): string[] {
   return ["mcp", "add", "--scope", "user", NOMBRE_MCP, "--", process.execPath, ...argumentosNode("mcp")];
 }
 
-/** Corre `claude`; null si no está en el PATH. Otro fallo se propaga con su salida. */
+/**
+ * Corre `claude`; null si no está en el PATH. Otro fallo se propaga con su salida. En Windows
+ * alcanza también al `claude.cmd` que instala npm.
+ */
 export function claude(args: string[], env: NodeJS.ProcessEnv): string | null {
+  const programa = invocacion("claude", args, env);
+  if (!programa) return null;
   try {
-    return execFileSync("claude", args, { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    // execFileSync acepta windowsVerbatimArguments (lo pasa a spawnSync) aunque sus tipos no lo declaren.
+    const opciones: ExecFileSyncOptionsWithStringEncoding & { windowsVerbatimArguments: boolean } = {
+      env,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsVerbatimArguments: programa.windowsVerbatimArguments,
+      windowsHide: true,
+    };
+    return execFileSync(programa.archivo, programa.args, opciones);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;

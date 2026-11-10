@@ -10,6 +10,7 @@ import { ClienteServicio, ErrorServicio } from "./client.js";
 import { cargarConfig } from "./config.js";
 import { resolverContexto } from "./context.js";
 import { diagnosticar, formatearHallazgos } from "./doctor.js";
+import { invocacion } from "./ejecutable.js";
 import { traerModelo } from "./model-fetch.js";
 import { servirMcp } from "./mcp/server.js";
 import { arrancarServicio } from "./service/app.js";
@@ -248,8 +249,10 @@ async function abrir(args: string[], ir?: "remoto"): Promise<number> {
   const { url: base } = await new ClienteServicio(config).llamar<{ url: string }>("enlace-web");
   const url = ir ? `${base}?ir=${ir}` : base;
   if (values.imprimir) return salida(url);
-  const [programa, ...previos] = navegador();
-  const hijo = spawn(programa as string, [...previos, url], { detached: true, stdio: "ignore" });
+  const [programa, ...previos] = navegador() as [string, ...string[]];
+  // Si no está en el PATH se intenta igual: el error del lanzamiento lleva al enlace para abrirlo a mano.
+  const lanzar = invocacion(programa, [...previos, url], process.env) ?? { archivo: programa, args: [...previos, url], windowsVerbatimArguments: false };
+  const hijo = spawn(lanzar.archivo, lanzar.args, { detached: true, stdio: "ignore", windowsVerbatimArguments: lanzar.windowsVerbatimArguments });
   const lanzado = await new Promise<boolean>((resolve) => {
     hijo.once("error", () => resolve(false));
     hijo.once("spawn", () => resolve(true));

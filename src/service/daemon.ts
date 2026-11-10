@@ -1,5 +1,6 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, type ExecFileSyncOptionsWithStringEncoding } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "../config.js";
 import { HOST } from "./server.js";
@@ -62,11 +63,21 @@ export function procesoVivo(pid: number): boolean {
 export function esServicio(pid: number): boolean {
   if (!procesoVivo(pid)) return false;
   try {
-    const comando = execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const comando = lineaDeComando(pid);
     return comando.includes(rutaCli()) && /\bserve\b/.test(comando);
   } catch {
     return false;
   }
+}
+
+/** Línea de comando de un proceso: `ps` en macOS y Linux; en Windows, que no tiene `ps`, la consulta CIM. */
+function lineaDeComando(pid: number): string {
+  const opciones: ExecFileSyncOptionsWithStringEncoding = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true };
+  if (process.platform !== "win32") return execFileSync("ps", ["-o", "command=", "-p", String(pid)], opciones);
+  // Ruta absoluta: no depende del PATH de quien llama.
+  const powershell = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const consulta = `(Get-CimInstance Win32_Process -Filter 'ProcessId=${Math.trunc(pid)}').CommandLine`;
+  return execFileSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", consulta], opciones);
 }
 
 /** Salud del servicio con el token; null si no hay token o no responde a tiempo. */
@@ -109,10 +120,17 @@ export function lanzarSeparado(config: Pick<Config, "home" | "logPath" | "pidPat
   mkdirSync(config.home, { recursive: true, mode: 0o700 });
   const log = openSync(config.logPath, "a", 0o600);
   try {
+    // Corre en su directorio de datos: en Windows un proceso vivo impide borrar o mover su carpeta de
+    // trabajo, y el servicio no debe retener la carpeta desde la que se lo arrancó. Sin ventana de consola.
+    // Las rutas relativas del entorno se fijan antes de cambiar de carpeta.
+    const env = { ...process.env };
+    for (const clave of ["AGENT_MEMORY_HOME", "AGENT_MEMORY_MODEL_CACHE"]) if (env[clave]?.trim()) env[clave] = resolve(env[clave].trim());
     const hijo = spawn(process.execPath, argumentosNode("serve"), {
       detached: true,
+      cwd: resolve(config.home),
       stdio: ["ignore", log, log],
-      env: process.env,
+      env,
+      windowsHide: true,
     });
     hijo.unref();
     if (hijo.pid === undefined) throw new Error("no se pudo lanzar el servicio");

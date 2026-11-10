@@ -28,6 +28,9 @@ export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv): Prom
 
   if (!existsSync(config.tokenPath)) {
     h.push({ nombre: "token", nivel: "aviso", detalle: `no existe ${config.tokenPath}`, arreglo: "se crea al arrancar: «agent-memory start»" });
+  } else if (process.platform === "win32") {
+    // Windows no tiene permisos POSIX (stat siempre da 0666 o 0444): el acceso lo dan los de la carpeta.
+    h.push({ nombre: "token", nivel: "ok", detalle: `${config.tokenPath} (en Windows sin permisos 0600: el acceso lo dan los permisos de su carpeta)` });
   } else {
     const modo = statSync(config.tokenPath).mode & 0o777;
     h.push(
