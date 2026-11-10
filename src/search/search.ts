@@ -2,6 +2,7 @@ import { vectorBlob } from "../db/driver.js";
 import { ReglaError, type Entrada } from "../domain/types.js";
 import { clausulaFiltros, type Filtros } from "../store/filters.js";
 import type { MemoryStore } from "../store/store.js";
+import { EmbeddingsDefectuosos } from "./autochequeo.js";
 import { terminos } from "./stopwords.js";
 
 /** Embedder capaz de vectorizar una consulta (con su propio prefijo, si el modelo lo usa). */
@@ -129,6 +130,7 @@ export class Buscador {
     try {
       vector = await this.embedder.embedQuery(consulta);
     } catch (error) {
+      if (error instanceof EmbeddingsDefectuosos) return texto(error.message);
       return texto(`el modelo de embeddings no está disponible (${(error as Error).message})`);
     }
     const conVector = this.store.db

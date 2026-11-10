@@ -1,3 +1,4 @@
+import { autochequear, explicarFallo } from "./search/autochequeo.js";
 import { TransformersEmbedder } from "./search/embedder.js";
 import { cacheModelos, modeloFijado } from "./search/models.js";
 
@@ -15,6 +16,9 @@ export async function traerModelo(env: NodeJS.ProcessEnv, escribir: (linea: stri
     await new TransformersEmbedder(modelo, { cache, permitirRed: true }).cargar();
     escribir("listo");
   }
-  const vector = await new TransformersEmbedder(modelo, { cache }).embedQuery("prueba sin red");
+  const embedder = new TransformersEmbedder(modelo, { cache });
+  const vector = await embedder.embedQuery("prueba sin red");
   escribir(`verificado sin red: ${vector.length} dimensiones`);
+  const r = await autochequear(embedder);
+  escribir(r.ok ? `autochequeo de embeddings ok (margen ${r.margen.toFixed(3)})` : `aviso: ${explicarFallo(r.margen)}`);
 }

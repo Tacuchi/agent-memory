@@ -37,7 +37,9 @@ agent-memory model fetch
 
 It downloads the pinned model (about 123 MB) to the model cache and then checks that it loads
 without network. Until the model is present, search still works by text, and both the search
-warning and `agent-memory doctor` tell you to run this command.
+warning and `agent-memory doctor` tell you to run this command. On startup the service embeds
+three fixed phrases as a self-check; if the vectors come out broken on your CPU, search falls back
+to text only, and both the search warning and `agent-memory doctor` say why and what to do.
 
 ## Connect Claude Code
 

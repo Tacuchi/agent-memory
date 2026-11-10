@@ -3,6 +3,7 @@ import type { Config } from "./config.js";
 import { claudeDisponible, hookInstalado, mcpRegistrado, rutasHook, skillInstalada } from "./claude-code/install.js";
 import { openDatabase } from "./db/driver.js";
 import { NODE_MINIMO, nodeSuficiente } from "./node-minimo.js";
+import { autochequear, explicarFallo, type EmbedderAutochequeo } from "./search/autochequeo.js";
 import { TransformersEmbedder } from "./search/embedder.js";
 import { cacheModelos, modeloFijado } from "./search/models.js";
 import { leerPid, salud } from "./service/daemon.js";
@@ -18,7 +19,7 @@ export interface Hallazgo {
   arreglo?: string;
 }
 
-export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv): Promise<Hallazgo[]> {
+export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv, opciones: { embedder?: EmbedderAutochequeo } = {}): Promise<Hallazgo[]> {
   const h: Hallazgo[] = [];
   h.push(
     nodeSuficiente(process.versions.node)
@@ -61,17 +62,7 @@ export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv): Prom
     h.push({ nombre: "sqlite-vec", nivel: "falla", detalle: (error as Error).message, arreglo: "reinstalá las dependencias: «npm ci» en el paquete" });
   }
 
-  const modelo = modeloFijado();
-  h.push(
-    TransformersEmbedder.enCache(modelo, cacheModelos(env))
-      ? { nombre: "modelo", nivel: "ok", detalle: `${modelo.id} en ${cacheModelos(env)}` }
-      : {
-          nombre: "modelo",
-          nivel: "aviso",
-          detalle: `falta ${modelo.id} en ${cacheModelos(env)}: la búsqueda queda solo por texto`,
-          arreglo: "traelo una vez con «agent-memory model fetch»",
-        },
-  );
+  h.push(await revisarModelo(env, opciones.embedder));
 
   if (!claudeDisponible(env)) {
     h.push({ nombre: "claude-code", nivel: "aviso", detalle: "«claude» no está en el PATH", arreglo: "instalá Claude Code y corré «agent-memory install claude-code»" });
@@ -96,6 +87,33 @@ export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv): Prom
     );
   }
   return h;
+}
+
+/** Que el modelo esté en la caché y que sus vectores pasen el autochequeo en esta máquina. */
+async function revisarModelo(env: NodeJS.ProcessEnv, inyectado?: EmbedderAutochequeo): Promise<Hallazgo> {
+  const modelo = modeloFijado();
+  const cache = cacheModelos(env);
+  if (!inyectado && !TransformersEmbedder.enCache(modelo, cache)) {
+    return {
+      nombre: "modelo",
+      nivel: "aviso",
+      detalle: `falta ${modelo.id} (${modelo.dtype}) en ${cache}: la búsqueda queda solo por texto`,
+      arreglo: "traelo una vez con «agent-memory model fetch»",
+    };
+  }
+  try {
+    const r = await autochequear(inyectado ?? new TransformersEmbedder(modelo, { cache }));
+    return r.ok
+      ? { nombre: "modelo", nivel: "ok", detalle: `${modelo.id} (${modelo.dtype}) en ${cache}; autochequeo de embeddings ok (margen ${r.margen.toFixed(3)})` }
+      : { nombre: "modelo", nivel: "falla", detalle: explicarFallo(r.margen), arreglo: "actualizá agent-memory; si sigue, reportalo con esta salida" };
+  } catch (error) {
+    return {
+      nombre: "modelo",
+      nivel: "aviso",
+      detalle: `${modelo.id} no carga (${(error as Error).message}): la búsqueda queda solo por texto`,
+      arreglo: "volvé a traerlo con «agent-memory model fetch»",
+    };
+  }
 }
 
 export function formatearHallazgos(hallazgos: readonly Hallazgo[]): string {

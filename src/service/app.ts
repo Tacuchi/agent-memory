@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Config } from "../config.js";
+import { EmbedderVerificado } from "../search/autochequeo.js";
 import { Buscador } from "../search/search.js";
 import { TransformersEmbedder } from "../search/embedder.js";
 import { modeloFijado } from "../search/models.js";
@@ -34,7 +35,8 @@ export async function arrancarServicio(
   config: Config,
   opciones: { embedder?: EmbedderCompleto | null; dirWeb?: string | null; reloj?: () => Date } = {},
 ): Promise<App> {
-  const embedder = opciones.embedder === undefined ? new TransformersEmbedder(modeloFijado()) : opciones.embedder;
+  // El modelo real pasa por el autochequeo: si sus vectores salen rotos en esta CPU, todo queda en modo texto.
+  const embedder = opciones.embedder === undefined ? new EmbedderVerificado(new TransformersEmbedder(modeloFijado())) : opciones.embedder;
   const token = asegurarToken(config.tokenPath);
   const store = MemoryStore.abrir(config.dbPath, { embedder, ...(opciones.reloj ? { reloj: opciones.reloj } : {}) });
   const buscador = new Buscador(store, embedder);
