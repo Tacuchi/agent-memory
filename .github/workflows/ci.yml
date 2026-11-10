@@ -40,6 +40,10 @@ jobs:
           path: ~/.cache/agent-memory/models
           key: modelo-${{ runner.os }}-${{ steps.modelo.outputs.id }}
       - run: npm run model:fetch
+      # TEMPORAL: diagnóstico de la búsqueda por vector en cada sistema.
+      - name: diagnóstico temporal de embeddings
+        continue-on-error: true
+        run: node --disable-warning=ExperimentalWarning .github/diagnostico-embeddings.mjs
       # TEMPORAL: diagnóstico de PowerShell con un entorno mínimo, para el stop colgado en Windows.
       - name: diagnóstico temporal de PowerShell
         if: runner.os == 'Windows'
