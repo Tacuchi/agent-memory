@@ -1,7 +1,7 @@
-import { readFileSync, writeFileSync, chmodSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
+import { correr, ejecutableNode, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild, crudo } from "../helpers/servicio.js";
 
 // `agent-memory open` arranca el servicio si hace falta y abre un enlace de un solo uso.
@@ -30,9 +30,8 @@ describe("agent-memory open", () => {
   it("abre el enlace con el navegador configurado", async () => {
     e = await entornoCli();
     const anotado = join(e.raiz, "navegador.txt");
-    const falso = join(e.raiz, "navegador.sh");
-    writeFileSync(falso, `#!/bin/sh\necho "$1" > "${anotado}"\n`);
-    chmodSync(falso, 0o755);
+    // Un ejecutable de verdad en cada sistema: script con shebang, o `.cmd` en Windows.
+    const falso = ejecutableNode(e.raiz, "navegador", `require("node:fs").writeFileSync(${JSON.stringify(anotado)}, process.argv[2] + "\\n");\n`);
     const r = await correr({ env: { ...e.env, AGENT_MEMORY_NAVEGADOR: falso } }, ["open"]);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain("una sola vez");

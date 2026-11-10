@@ -1,13 +1,13 @@
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { CLI, puertoLibre } from "./servicio.js";
 import { dirTemporal } from "./temp.js";
 
 // Entorno aislado para lanzar el bin: HOME, datos y puerto temporales y un `claude` falso que
-// registra sus argumentos. El PATH no incluye el del sistema salvo git y node: nunca se ejecuta el
+// registra sus argumentos. El PATH solo trae node, git y las carpetas base del sistema: nunca se ejecuta el
 // `claude` real ni se toca la configuración real de Claude Code.
 
 export interface EntornoCli {
@@ -22,21 +22,54 @@ export interface EntornoCli {
   limpiar(): Promise<void>;
 }
 
-const CLAUDE_FALSO = `#!/bin/sh
-echo "$*" >> "$FAKE_CLAUDE_LOG"
-mkdir -p "$FAKE_CLAUDE_STATE"
-case "$1" in
-  --version) echo "9.9.9 (Claude Code falso)"; exit 0 ;;
-  mcp)
-    case "$2" in
-      add) n="$5"; [ -e "$FAKE_CLAUDE_STATE/$n" ] && { echo "ya existe $n" >&2; exit 1; }; shift 6; echo "$*" > "$FAKE_CLAUDE_STATE/$n"; exit 0 ;;
-      remove) [ -e "$FAKE_CLAUDE_STATE/$3" ] || { echo "no existe $3" >&2; exit 1; }; rm "$FAKE_CLAUDE_STATE/$3"; exit 0 ;;
-      get) [ -e "$FAKE_CLAUDE_STATE/$3" ] || { echo "no existe $3" >&2; exit 1; }; cat "$FAKE_CLAUDE_STATE/$3"; exit 0 ;;
-    esac ;;
-esac
-echo "claude falso: comando no soportado: $*" >&2
-exit 2
+// El `claude` falso, en JS para que sea el mismo en los tres sistemas. Lo envuelve un script de shell
+// (`claude`) o, en Windows, un `claude.cmd` como el que instala npm.
+const CLAUDE_FALSO = `const fs = require("node:fs");
+const path = require("node:path");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.FAKE_CLAUDE_LOG, args.join(" ") + "\\n");
+const estado = process.env.FAKE_CLAUDE_STATE;
+fs.mkdirSync(estado, { recursive: true });
+const salir = (codigo, error) => { if (error) process.stderr.write(error + "\\n"); process.exit(codigo); };
+const [comando, sub, nombre] = args;
+if (comando === "--version") { process.stdout.write("9.9.9 (Claude Code falso)\\n"); salir(0); }
+if (comando === "mcp" && sub === "add") {
+  const archivo = path.join(estado, args[4]);
+  if (fs.existsSync(archivo)) salir(1, "ya existe " + args[4]);
+  fs.writeFileSync(archivo, args.slice(6).join(" ") + "\\n");
+  salir(0);
+}
+if (comando === "mcp" && (sub === "remove" || sub === "get")) {
+  const archivo = path.join(estado, nombre);
+  if (!fs.existsSync(archivo)) salir(1, "no existe " + nombre);
+  if (sub === "remove") fs.rmSync(archivo); else process.stdout.write(fs.readFileSync(archivo, "utf8"));
+  salir(0);
+}
+salir(2, "claude falso: comando no soportado: " + args.join(" "));
 `;
+
+const WINDOWS = process.platform === "win32";
+
+/** Ejecutable de prueba que corre `script` con node: `<nombre>` con shebang, o `<nombre>.cmd` en Windows. */
+export function ejecutableNode(carpeta: string, nombre: string, script: string): string {
+  const js = join(carpeta, `${nombre}.cjs`);
+  writeFileSync(js, script);
+  if (WINDOWS) {
+    const cmd = join(carpeta, `${nombre}.cmd`);
+    writeFileSync(cmd, `@"${process.execPath}" "${js}" %*\r\n`);
+    return cmd;
+  }
+  const sh = join(carpeta, nombre);
+  writeFileSync(sh, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+  chmodSync(sh, 0o755);
+  return sh;
+}
+
+/** Windows no tiene git en System32: la carpeta del `git.exe` del PATH de las pruebas, para resolver repos. */
+function carpetaGitWindows(): string[] {
+  const dir = (process.env.PATH ?? "").split(delimiter).find((d) => d && existsSync(join(d, "git.exe")));
+  return dir ? [dir] : [];
+}
 
 export async function entornoCli(opciones: { claude?: boolean } = {}): Promise<EntornoCli> {
   const { dir, limpiar } = dirTemporal("agent-memory-cli-");
@@ -45,21 +78,30 @@ export async function entornoCli(opciones: { claude?: boolean } = {}): Promise<E
   const bin = join(dir, "bin");
   mkdirSync(home, { recursive: true });
   mkdirSync(bin);
-  if (opciones.claude !== false) {
-    writeFileSync(join(bin, "claude"), CLAUDE_FALSO);
-    chmodSync(join(bin, "claude"), 0o755);
-  }
+  if (opciones.claude !== false) ejecutableNode(bin, "claude", CLAUDE_FALSO);
   const port = await puertoLibre();
   const logClaude = join(dir, "claude.log");
   const estadoClaude = join(dir, "claude-estado");
+  const sistema = WINDOWS ? [join(process.env.SystemRoot ?? "C:\\Windows", "System32"), ...carpetaGitWindows()] : ["/usr/bin", "/bin"];
   const env: NodeJS.ProcessEnv = {
     HOME: home,
     AGENT_MEMORY_HOME: datos,
     AGENT_MEMORY_PORT: String(port),
-    PATH: [bin, dirname(process.execPath), "/usr/bin", "/bin"].join(":"),
+    PATH: [...new Set([bin, dirname(process.execPath), ...sistema])].join(delimiter),
     FAKE_CLAUDE_LOG: logClaude,
     FAKE_CLAUDE_STATE: estadoClaude,
     LANG: "C.UTF-8",
+    // Windows: su HOME es USERPROFILE (lo lee os.homedir()) y sin SystemRoot ni ComSpec no corren ni la red ni cmd.exe.
+    ...(WINDOWS
+      ? {
+          USERPROFILE: home,
+          SystemRoot: process.env.SystemRoot,
+          ComSpec: process.env.ComSpec,
+          PATHEXT: process.env.PATHEXT,
+          TEMP: process.env.TEMP,
+          TMP: process.env.TMP,
+        }
+      : {}),
   };
   const e: EntornoCli = {
     raiz: dir,
@@ -78,6 +120,8 @@ export async function entornoCli(opciones: { claude?: boolean } = {}): Promise<E
 }
 
 export interface Corrida {
+  /** Pid del proceso `agent-memory` que corrió. */
+  pid: number;
   code: number;
   stdout: string;
   stderr: string;
@@ -98,7 +142,7 @@ export function correr(e: Pick<EntornoCli, "env">, args: string[], opciones: { i
     hijo.stdout.setEncoding("utf8").on("data", (c: string) => (stdout += c));
     hijo.stderr.setEncoding("utf8").on("data", (c: string) => (stderr += c));
     hijo.on("error", reject);
-    hijo.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr, ms: Date.now() - inicio }));
+    hijo.on("close", (code) => resolve({ pid: hijo.pid ?? -1, code: code ?? -1, stdout, stderr, ms: Date.now() - inicio }));
     hijo.stdin.end(opciones.input ?? "");
   });
 }

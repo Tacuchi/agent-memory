@@ -7,7 +7,7 @@ import { cargarConfig } from "../../src/config.js";
 import { HERRAMIENTAS } from "../../src/mcp/server.js";
 import { procesoVivo } from "../../src/service/daemon.js";
 import { clienteMcp, correr, entornoCli, llamarHerramienta, type EntornoCli } from "../helpers/cli.js";
-import { asegurarBuild } from "../helpers/servicio.js";
+import { CLI, asegurarBuild } from "../helpers/servicio.js";
 
 // La CLI arranca, para, muestra el estado, busca y diagnostica, siempre
 // sobre HOME, datos y puerto temporales. Con el servicio caído nada devuelve un vacío.
@@ -27,6 +27,8 @@ const ARGS_MINIMOS: Record<(typeof HERRAMIENTAS)[number], Record<string, unknown
 };
 
 let e: EntornoCli;
+/** Cómo aparece el servicio en la línea de comando de Windows: la ruta de cli.js con barras invertidas. */
+const CLI_SERVE = `${CLI.replaceAll("/", "\\")} serve`;
 
 beforeAll(async () => {
   asegurarBuild();
@@ -114,7 +116,8 @@ describe("start, status, search y stop", () => {
   it("doctor con el servicio arriba: servicio y token en ok", async () => {
     const r = await correr(e, ["doctor"]);
     expect(r.stdout).toMatch(new RegExp(`ok {4}servicio: responde en 127\\.0\\.0\\.1:${e.port}`));
-    expect(r.stdout).toMatch(/ok {4}token: .* con permisos 0600/);
+    // Windows no tiene permisos POSIX: el token no se puede dejar en 0600 y doctor no lo exige.
+    expect(r.stdout).toMatch(process.platform === "win32" ? /ok {4}token: .* en Windows sin permisos 0600/ : /ok {4}token: .* con permisos 0600/);
     expect(r.stdout).toMatch(/aviso modelo: falta .*\n {6}arreglo: /);
   });
 
@@ -130,13 +133,25 @@ describe("start, status, search y stop", () => {
 });
 
 describe("archivo de pid (relectura R1, R2)", () => {
-  const serves = () =>
-    execFileSync("ps", ["eww", "-ax", "-o", "pid=,command="], { encoding: "utf8" })
+  /**
+   * Servicios `cli.js serve` de este entorno. En macOS y Linux se reconocen por el AGENT_MEMORY_HOME de su
+   * entorno (`ps axeww`, sintaxis BSD que aceptan los dos `ps`). Windows no deja leer el entorno de otro proceso:
+   * se reconocen por el proceso que los lanzó, uno de los `start` de la prueba.
+   */
+  const serves = (lanzadores: number[]): string[] => {
+    if (process.platform === "win32") {
+      const consulta = "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, $_.CommandLine }";
+      return execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", consulta], { encoding: "utf8" })
+        .split(/\r?\n/)
+        .filter((l) => l.includes(CLI_SERVE) && lanzadores.includes(Number(l.split(" ")[1])));
+    }
+    return execFileSync("ps", ["axeww", "-o", "pid=,command="], { encoding: "utf8" })
       .split("\n")
       .filter((l) => l.includes("cli.js serve") && l.includes(`AGENT_MEMORY_HOME=${e.datos}`));
+  };
 
   it("stop nunca mata un proceso ajeno que reusó el pid de un archivo viejo", async () => {
-    const ajeno = spawn("/bin/sleep", ["30"], { stdio: "ignore" });
+    const ajeno = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { stdio: "ignore" });
     try {
       writeFileSync(join(e.datos, "servicio.pid"), JSON.stringify({ pid: ajeno.pid, port: e.port }));
       const r = await correr(e, ["stop"]);
@@ -151,9 +166,9 @@ describe("archivo de pid (relectura R1, R2)", () => {
   it("dos start a la vez dejan un solo servicio y stop lo alcanza", async () => {
     const [a, b] = await Promise.all([correr(e, ["start"]), correr(e, ["start"])]);
     expect([a.code, b.code]).toEqual([0, 0]);
-    expect(serves()).toHaveLength(1);
+    expect(serves([a.pid, b.pid])).toHaveLength(1);
     expect((await correr(e, ["stop"])).code).toBe(0);
-    expect(serves()).toHaveLength(0);
+    expect(serves([a.pid, b.pid])).toHaveLength(0);
   });
 });
 
@@ -174,7 +189,13 @@ describe("argumentos (parseArgs)", () => {
     const token = join(e.datos, "token");
     chmodSync(token, 0o644);
     const r = await correr(e, ["doctor"]);
-    expect(r.stdout).toMatch(/FALLA token: .* permisos 0644\n {6}arreglo: chmod 600 /);
+    if (process.platform === "win32") {
+      // En Windows chmod solo cambia el atributo de solo lectura: no hay permisos abiertos que marcar.
+      expect(r.stdout).toMatch(/ok {4}token: /);
+      expect(r.stdout).not.toMatch(/FALLA token/);
+    } else {
+      expect(r.stdout).toMatch(/FALLA token: .* permisos 0644\n {6}arreglo: chmod 600 /);
+    }
     chmodSync(token, 0o600);
   });
 });

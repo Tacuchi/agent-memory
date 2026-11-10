@@ -29,7 +29,8 @@ const llamadasClaude = () => (existsSync(e.logClaude) ? readFileSync(e.logClaude
 describe("comando del hook", () => {
   it("cita las rutas para el shell: ni $ ni comillas se expanden o parten", () => {
     const raro = "/tmp/a b/it's $HOME/`x`";
-    expect(execFileSync("/bin/sh", ["-c", `printf %s ${citar(raro)}`], { encoding: "utf8" })).toBe(raro);
+    // `sh` del PATH: en Windows es el de Git, el shell con el que Claude Code corre los hooks.
+    expect(execFileSync("sh", ["-c", `printf %s ${citar(raro)}`], { encoding: "utf8" })).toBe(raro);
   });
 });
 

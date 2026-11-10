@@ -55,7 +55,7 @@ beforeAll(async () => {
   // Un repo git sin remoto con el marcador de proyecto propio: da contexto de repo y de proyecto.
   const tmp = dirTemporal("agent-memory-proyecto-");
   limpiarCarpeta = tmp.limpiar;
-  carpeta = realpathSync(tmp.dir);
+  carpeta = realpathSync.native(tmp.dir);
   execFileSync("git", ["init", "-q"], { cwd: carpeta });
   writeFileSync(join(carpeta, MARCADOR_PROYECTO), JSON.stringify({ proyecto: "sintetico" }));
 

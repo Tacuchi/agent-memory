@@ -9,6 +9,12 @@ import { dirTemporal } from "../helpers/temp.js";
 import { CLI, asegurarBuild, crudo, puertoLibre, servicioDePrueba, type ServicioDePrueba } from "../helpers/servicio.js";
 
 const ctx = { repo: "github.com/ejemplo/sintetico", proyecto: null };
+const WINDOWS = process.platform === "win32";
+
+/** Windows no tiene permisos POSIX (stat da 0666 o 0444): ahí el 0600 no se puede pedir ni comprobar. */
+function esperarSoloDueño(ruta: string): void {
+  if (!WINDOWS) expect(statSync(ruta).mode & 0o777).toBe(0o600);
+}
 
 describe("acceso al servicio local", () => {
   let s: ServicioDePrueba;
@@ -21,7 +27,7 @@ describe("acceso al servicio local", () => {
   it("escucha solo en 127.0.0.1 y el token vive en un archivo 0600", () => {
     expect(s.app.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect((s.app.server.address() as { address: string }).address).toBe("127.0.0.1");
-    expect(statSync(s.config.tokenPath).mode & 0o777).toBe(0o600);
+    esperarSoloDueño(s.config.tokenPath);
     expect(s.token).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -199,14 +205,15 @@ describe("agent-memory serve", () => {
       while (!salida.includes("escuchando") && Date.now() < limite) await new Promise((r) => setTimeout(r, 50));
       expect(salida).toContain(`http://127.0.0.1:${port}`);
       const tokenPath = join(dir, "token");
-      expect(statSync(tokenPath).mode & 0o777).toBe(0o600);
+      esperarSoloDueño(tokenPath);
       const res = await fetch(`http://127.0.0.1:${port}/api/salud`, { method: "POST", headers: { authorization: `Bearer ${leerToken(tokenPath)}` } });
       expect(res.status).toBe(200);
       expect((await fetch(`http://127.0.0.1:${port}/api/salud`, { method: "POST" })).status).toBe(401);
     } finally {
-      const fin = new Promise<number | null>((r) => hijo.once("exit", r));
+      const fin = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) => hijo.once("exit", (code, signal) => r({ code, signal })));
       hijo.kill("SIGTERM");
-      expect(await fin).toBe(0);
+      // En Windows no existen las señales: Node termina el proceso en el acto y lo informa como SIGTERM, sin código.
+      expect(await fin).toEqual(WINDOWS ? { code: null, signal: "SIGTERM" } : { code: 0, signal: null });
       limpiar();
     }
   });

@@ -5,7 +5,8 @@ import { MemoryStore, type OpcionesStore } from "../../src/store/store.js";
 
 export function dirTemporal(prefijo = "agent-memory-test-"): { dir: string; limpiar: () => void } {
   const dir = mkdtempSync(join(tmpdir(), prefijo));
-  return { dir, limpiar: () => rmSync(dir, { recursive: true, force: true }) };
+  // Reintentos: en Windows un proceso que acaba de terminar puede retener la carpeta unos instantes (EBUSY).
+  return { dir, limpiar: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) };
 }
 
 /** Almacén sobre un archivo SQLite temporal, con reloj controlable. */

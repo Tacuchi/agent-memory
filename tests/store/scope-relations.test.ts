@@ -14,7 +14,8 @@ describe("resolución de ámbito desde el contexto", () => {
   let limpiar: () => void;
   beforeEach(() => {
     ({ dir: base, limpiar } = dirTemporal("agent-memory-ctx-"));
-    base = realpathSync(base);
+    // `native`: en Windows también expande los nombres cortos 8.3 (`RUNNER~1`), como el producto.
+    base = realpathSync.native(base);
   });
   afterEach(() => limpiar());
 
