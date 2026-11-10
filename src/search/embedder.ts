@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Embedder } from "../store/store.js";
-import { cacheModelos, type ModeloEmbeddings } from "./models.js";
+import { archivoOnnx, cacheModelos, idVectorial, type ModeloEmbeddings } from "./models.js";
 
 type Extractor = (texto: string, opciones: { pooling: "mean" | "cls"; normalize: boolean }) => Promise<{ data: Float32Array }>;
 
@@ -28,12 +28,13 @@ export class TransformersEmbedder implements Embedder {
     private readonly modelo: ModeloEmbeddings,
     private readonly opciones: OpcionesEmbedder = {},
   ) {
-    this.modelId = modelo.id;
+    this.modelId = idVectorial(modelo);
     this.dims = modelo.dims;
   }
 
+  /** El archivo ONNX del dtype fijado: una caché con solo otra variante (la q8 de antes) no sirve. */
   static enCache(modelo: ModeloEmbeddings, cache = cacheModelos()): boolean {
-    return existsSync(join(cache, ...modelo.id.split("/"), "onnx"));
+    return existsSync(join(cache, ...modelo.id.split("/"), ...archivoOnnx(modelo)));
   }
 
   async embedPassage(texto: string): Promise<Float32Array> {
@@ -66,7 +67,7 @@ export class TransformersEmbedder implements Embedder {
   private async crearExtractor(): Promise<Extractor> {
     const cache = this.opciones.cache ?? cacheModelos();
     const red = Boolean(this.opciones.permitirRed);
-    if (!red && !TransformersEmbedder.enCache(this.modelo, cache)) throw new ModeloNoDisponible(this.modelo.id, cache);
+    if (!red && !TransformersEmbedder.enCache(this.modelo, cache)) throw new ModeloNoDisponible(`${this.modelo.id} (${this.modelo.dtype})`, cache);
     const { env, pipeline } = await import("@huggingface/transformers");
     // Sin red, la caché local se lee como carpeta de modelos locales: mismo layout `<org>/<modelo>/`.
     env.cacheDir = cache;

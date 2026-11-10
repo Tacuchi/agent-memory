@@ -10,8 +10,9 @@ export interface Conjunto {
 }
 
 /**
- * Puesto máximo aceptado para una paráfrasis, el mismo en todos los sistemas. Era 3; es 5 porque los kernels q8 de
- * ONNX dan números distintos según la CPU (x64 frente a arm64) y una paráfrasis ganaba su puesto por 0,02 de coseno.
+ * Puesto máximo aceptado para una paráfrasis, el mismo en todos los sistemas. Era 3; es 5 porque los kernels cuantizados
+ * de ONNX (medido con q8) dan números distintos según la CPU (x64 frente a arm64) y una paráfrasis ganaba su puesto
+ * por 0,02 de coseno.
  */
 export const PUESTO_MAXIMO_PARAFRASIS = 5;
 
