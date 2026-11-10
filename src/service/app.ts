@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { cargarConfig, type Config, type Exclusion } from "../config.js";
 import { Buscador } from "../search/search.js";
 import { TransformersEmbedder } from "../search/embedder.js";
@@ -44,13 +45,22 @@ function sello(ruta: string): string {
   return `${s.mtimeMs}:${s.size}`;
 }
 
+/**
+ * La web compilada vive en `dist/web` del paquete. `src/service` y `dist/service` están a la misma
+ * profundidad, así que la ruta vale tanto para el bin como para las pruebas sobre el código fuente.
+ */
+export function dirWebPorDefecto(): string | null {
+  const dir = fileURLToPath(new URL("../../dist/web/", import.meta.url));
+  return existsSync(`${dir}index.html`) ? dir : null;
+}
+
 /** Raíz de composición del servicio: almacén, búsqueda, token y HTTP sobre el directorio de datos. */
-export async function arrancarServicio(config: Config, opciones: { embedder?: EmbedderCompleto | null } = {}): Promise<App> {
+export async function arrancarServicio(config: Config, opciones: { embedder?: EmbedderCompleto | null; dirWeb?: string | null } = {}): Promise<App> {
   const embedder = opciones.embedder === undefined ? new TransformersEmbedder(modeloFijado()) : opciones.embedder;
   const token = asegurarToken(config.tokenPath);
   const store = MemoryStore.abrir(config.dbPath, { embedder });
   const api = new Api(store, new Buscador(store, embedder), version(), { exclusion: exclusionViva(config), topeIndice: config.topeIndice });
-  const servicio = await iniciarServicio({ api, token, port: config.port });
+  const servicio = await iniciarServicio({ api, token, port: config.port, dirWeb: opciones.dirWeb === undefined ? dirWebPorDefecto() : opciones.dirWeb });
   const regeneracion = store.regenerarVectores().catch(() => 0);
   return {
     ...servicio,

@@ -1,4 +1,5 @@
 #!/usr/bin/env -S node --disable-warning=ExperimentalWarning
+import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { desinstalarClaudeCode, instalarClaudeCode } from "./claude-code/install.js";
@@ -23,6 +24,8 @@ servicio:
   doctor                    revisa Node, token, servicio, sqlite-vec, modelo y Claude Code
 
 memoria:
+  open                      abre la web local con un enlace de un solo uso
+       [--imprimir]         solo muestra el enlace, sin abrir el navegador
   search <consulta>         busca en el contexto del directorio actual
          [--limite N] [--todos]
 
@@ -60,6 +63,8 @@ export async function main(argv: string[]): Promise<number> {
       return sinArgs(resto, status);
     case "doctor":
       return sinArgs(resto, doctor);
+    case "open":
+      return abrir(resto);
     case "search":
       return search(resto);
     case "install":
@@ -145,6 +150,44 @@ async function doctor(): Promise<number> {
   const hallazgos = await diagnosticar(config, process.env);
   process.stdout.write(`${formatearHallazgos(hallazgos)}\n`);
   return hallazgos.some((h) => h.nivel === "falla") ? 1 : 0;
+}
+
+/**
+ * Abre la web (T1.2): arranca el servicio si hace falta, pide con el token un enlace de un solo uso
+ * y lo abre en el navegador. El enlace vence en 60 s y no sirve una segunda vez (AC-21).
+ */
+async function abrir(args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { imprimir: { type: "boolean" } } });
+  if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
+  const config = cargarConfig();
+  const r = await arrancarSeparado(config, ESPERA_START_MS);
+  if (!r.salud) {
+    process.stderr.write(`agent-memory no respondió en ${ESPERA_START_MS / 1000} s; mirá ${config.logPath} o corré «agent-memory doctor»\n`);
+    return 1;
+  }
+  const { url } = await new ClienteServicio(config).llamar<{ url: string }>("enlace-web");
+  if (values.imprimir) return salida(url);
+  const [programa, ...previos] = navegador();
+  const hijo = spawn(programa as string, [...previos, url], { detached: true, stdio: "ignore" });
+  const lanzado = await new Promise<boolean>((resolve) => {
+    hijo.once("error", () => resolve(false));
+    hijo.once("spawn", () => resolve(true));
+  });
+  if (!lanzado) {
+    process.stderr.write(`no se pudo abrir el navegador con «${programa}»; abrí este enlace a mano (sirve una vez, por 60 s):\n${url}\n`);
+    return 1;
+  }
+  hijo.unref();
+  return salida("web abierta en el navegador (el enlace sirve una sola vez y vence en 60 s)");
+}
+
+/** Comando que abre una URL: `AGENT_MEMORY_NAVEGADOR` si está, si no el del sistema. */
+function navegador(): string[] {
+  const propio = process.env.AGENT_MEMORY_NAVEGADOR?.trim();
+  if (propio) return [propio];
+  if (process.platform === "darwin") return ["open"];
+  if (process.platform === "win32") return ["cmd", "/c", "start", ""];
+  return ["xdg-open"];
 }
 
 interface Resultado {

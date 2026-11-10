@@ -65,6 +65,16 @@ const ESQUEMAS = {
   rechazar: z.object({ id, motivo: z.string().optional() }).strict(),
   cambiar_ambito: z.object({ id, ambito: z.enum(AMBITOS), ambito_ref: z.string().nullable().optional() }).strict(),
   relacionar: z.object({ origen: id, destino: id }).strict(),
+  fusionar: z
+    .object({
+      ids: z.array(id).min(2).max(50),
+      titulo: z.string(),
+      contenido: z.string(),
+      tipo: z.enum(TIPOS).optional(),
+      ambito: z.enum(AMBITOS).optional(),
+      ambito_ref: z.string().nullable().optional(),
+    })
+    .strict(),
   indice: z.object({ contexto: contextoObligatorio, tope: z.number().int().min(200).max(100_000).optional() }).strict(),
 } as const;
 
@@ -72,7 +82,7 @@ export type Operacion = keyof typeof ESQUEMAS;
 export const OPERACIONES = Object.keys(ESQUEMAS) as Operacion[];
 
 /** Operaciones que la persona hace desde la web (sesión del navegador), nunca el agente. */
-const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito"]);
+const SOLO_PERSONA: ReadonlySet<Operacion> = new Set(["revertir_caducidad", "cambiar_ambito", "fusionar"]);
 
 export interface OpcionesApi {
   /** Patrones de repos excluidos (AC-20), o cómo leerlos en cada petición; por defecto, ninguno. */
@@ -238,6 +248,16 @@ export class Api {
 
   private relacionar(d: z.infer<typeof ESQUEMAS.relacionar>) {
     return { relaciones: this.store.relacionar(d.origen, d.destino).map(vistaRelacion) };
+  }
+
+  private async fusionar(d: z.infer<typeof ESQUEMAS.fusionar>) {
+    const r = await this.store.fusionar(d.ids, {
+      titulo: d.titulo,
+      contenido: d.contenido,
+      ...(d.tipo ? { tipo: d.tipo } : {}),
+      ...(d.ambito ? { ambito: d.ambito, ambitoRef: d.ambito_ref ?? null } : {}),
+    });
+    return { entrada: vistaEntrada(r.entrada), reemplazadas: d.ids, redactados: r.redactados };
   }
 
   /** Sin huella, la entrada no cuenta como confirmada; una huella distinta se rechaza (AC-16). */

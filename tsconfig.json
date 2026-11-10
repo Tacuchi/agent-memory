@@ -15,5 +15,6 @@
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "tests", "scripts", "vitest.config.ts"]
+  "include": ["src", "tests", "scripts", "vitest.config.ts"],
+  "exclude": ["tests/web", "tests/governance"]
 }

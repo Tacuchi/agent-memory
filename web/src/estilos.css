@@ -1,0 +1,62 @@
+/* Estilos propios mínimos, sin fuentes externas: la web funciona sin red. */
+:root {
+  color-scheme: light dark;
+  --fondo: #fbfbfa;
+  --texto: #1d1d1b;
+  --suave: #6b6b66;
+  --borde: #d9d8d2;
+  --acento: #2b5fab;
+  --ok: #1f7a3a;
+  --error: #b3261e;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #191917;
+    --texto: #ecebe6;
+    --suave: #a3a29b;
+    --borde: #3a3935;
+    --acento: #8db4ff;
+    --ok: #7fd49a;
+    --error: #ff9b93;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--texto); }
+.app { max-width: 960px; margin: 0 auto; padding: 16px; }
+.cabecera { display: flex; flex-wrap: wrap; align-items: baseline; gap: 16px; border-bottom: 1px solid var(--borde); margin-bottom: 16px; }
+.cabecera h1 { font-size: 1.2rem; margin: 8px 0; }
+nav { display: flex; flex-wrap: wrap; gap: 4px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { border: 1px solid var(--borde); background: transparent; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.pestana.activa { border-color: var(--acento); color: var(--acento); }
+.enlace { border: 0; padding: 0; color: var(--acento); text-align: left; }
+input, select, textarea { border: 1px solid var(--borde); border-radius: 6px; padding: 4px 8px; background: transparent; width: 100%; }
+input[type="checkbox"] { width: auto; }
+label { display: grid; gap: 2px; }
+label.casilla { display: inline-flex; gap: 4px; align-items: center; margin-right: 12px; }
+fieldset { border: 1px solid var(--borde); border-radius: 6px; }
+.filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; align-items: end; margin-bottom: 12px; }
+.filtros fieldset { grid-column: 1 / -1; }
+.lista { list-style: none; padding: 0; margin: 0; }
+.lista li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--borde); }
+.meta { color: var(--suave); font-size: 0.9em; }
+.estados { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.chip { border: 1px solid var(--borde); border-radius: 999px; padding: 0 8px; font-size: 0.85em; }
+.validacion-pendiente { border-color: #b88a00; }
+.validacion-validada { border-color: var(--ok); }
+.validacion-rechazada, .vida-reemplazada, .vencimiento { border-color: var(--error); }
+.tarjeta, .bloque { border: 1px solid var(--borde); border-radius: 8px; padding: 12px; margin: 12px 0; display: grid; gap: 8px; }
+.acciones { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.contenido { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background: color-mix(in srgb, var(--borde) 25%, transparent); padding: 8px; border-radius: 6px; }
+.ficha { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; }
+.ficha dt { color: var(--suave); }
+.ficha dd { margin: 0; }
+.aviso { padding: 8px; border-radius: 6px; }
+.aviso.error { color: var(--error); border: 1px solid var(--error); }
+.aviso.ok { color: var(--ok); border: 1px solid var(--ok); }
+.revisiones li { margin-bottom: 8px; }
+.barra { display: flex; gap: 8px; align-items: center; }

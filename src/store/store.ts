@@ -40,6 +40,15 @@ export interface NuevaEntrada {
   relacionadas?: number[];
 }
 
+/** Lo que la persona elige para la entrada resultante de una fusión; tipo y ámbito, por defecto, los de la primera. */
+export interface Fusion {
+  titulo: string;
+  contenido: string;
+  tipo?: string;
+  ambito?: Ambito;
+  ambitoRef?: string | null;
+}
+
 export interface Origen {
   actor: Actor;
   confirmado?: boolean;
@@ -136,12 +145,7 @@ export class MemoryStore {
     if (base.validacion === "validada") base.validadaEn = marca;
 
     const entrada = transaction(this.db, () => {
-      const params = aParametros(base);
-      const cols = COLUMNAS_VERSIONADAS;
-      const { lastInsertRowid } = this.db
-        .prepare(`INSERT INTO entradas (${cols.join(",")}) VALUES (${cols.map((c) => `:${c}`).join(",")})`)
-        .run(params);
-      const id = Number(lastInsertRowid);
+      const id = this.insertar(base);
       const creada = this.obtener(id);
       this.registrarRevision(creada, "crear", origen.actor);
       this.escribirVector(id, vector);
@@ -194,6 +198,60 @@ export class MemoryStore {
       return this.obtener(id);
     });
     return { entrada, redactados: [] };
+  }
+
+  /**
+   * Fusión hecha por la persona (AC-12): la resultante nace validada por la web (o sin validación si
+   * es de proyecto) y cada original queda reemplazada por ella, relacionada y con su historia intacta.
+   */
+  async fusionar(ids: readonly number[], fusion: Fusion): Promise<ResultadoEscritura> {
+    const unicos = [...new Set(ids)];
+    if (unicos.length < 2) throw new ReglaError("fusion_invalida", "una fusión necesita al menos dos entradas distintas");
+    const originales = unicos.map((id) => this.obtener(id));
+    for (const o of originales) this.exigirActiva(o.id, "fusionar");
+    const primera = originales[0] as Entrada;
+    const tipo = reglas.validarTipo(fusion.tipo ?? primera.tipo);
+    const ambito = reglas.validarAmbito(fusion.ambito ?? primera.ambito);
+    const ambitoRef = ambito === "global" ? null : (fusion.ambito === undefined ? primera.ambitoRef : (fusion.ambitoRef ?? "").trim() || null);
+    if (ambito !== "global" && !ambitoRef) {
+      throw new ReglaError("ambito_sin_ref", `el ámbito ${ambito} necesita la referencia del ${ambito}`);
+    }
+    const titulo = this.redactarCampo(reglas.validarTexto("titulo", fusion.titulo));
+    const contenido = this.redactarCampo(reglas.validarTexto("contenido", fusion.contenido));
+    const vector = await this.vectorizar(titulo.texto, contenido.texto);
+    const ahora = this.reloj();
+    const marca = ahora.toISOString();
+    const base: Omit<Entrada, "id"> = {
+      tipo,
+      titulo: titulo.texto,
+      contenido: contenido.texto,
+      ambito,
+      ambitoRef,
+      vida: "activa",
+      vigenciaHasta: null,
+      reemplazadaPor: null,
+      reemplazaA: null,
+      ...reglas.validacionInicial(tipo, { actor: "persona" }),
+      motivoRechazo: null,
+      caducidad: null,
+      creadaEn: marca,
+      actualizadaEn: marca,
+      validadaEn: reglas.validacionInicial(tipo, { actor: "persona" }).validacion === "validada" ? marca : null,
+      usadaEn: null,
+      usos: 0,
+    };
+    const entrada = transaction(this.db, () => {
+      for (const o of originales) this.exigirSinCambiosConcurrentes(o);
+      const id = this.insertar(base);
+      this.registrarRevision(this.obtener(id), `fusionar:${unicos.join(",")}`, "persona");
+      this.escribirVector(id, vector);
+      for (const o of originales) {
+        this.guardar(reglas.marcarReemplazada(this.obtener(o.id), id, ahora), `fusionada_en:${id}`, "persona");
+        this.insertarRelacion(id, o.id);
+      }
+      return this.obtener(id);
+    });
+    return { entrada, redactados: unir(titulo.redactados, contenido.redactados) };
   }
 
   aprobar(id: number, via: Via): Entrada {
@@ -386,6 +444,14 @@ export class MemoryStore {
          ON CONFLICT(entrada_id) DO UPDATE SET estado = 'faltante', model_id = NULL, dims = NULL, actualizado_en = excluded.actualizado_en`,
       )
       .run(id, marca);
+  }
+
+  private insertar(base: Omit<Entrada, "id">): number {
+    const cols = COLUMNAS_VERSIONADAS;
+    const { lastInsertRowid } = this.db
+      .prepare(`INSERT INTO entradas (${cols.join(",")}) VALUES (${cols.map((c) => `:${c}`).join(",")})`)
+      .run(aParametros(base));
+    return Number(lastInsertRowid);
   }
 
   private guardar(entrada: Entrada, accion: string, actor: Actor): void {
