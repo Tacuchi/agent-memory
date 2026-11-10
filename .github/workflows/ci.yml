@@ -28,6 +28,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # Las pruebas de búsqueda usan el modelo de embeddings real y corren sin red: se trae una vez por
+      # id de modelo y queda en caché entre corridas.
+      - name: id del modelo fijado
+        id: modelo
+        run: |
+          npx tsc -p tsconfig.build.json
+          echo "id=$(node -e 'import("./dist/search/models.js").then((m) => { const x = m.modeloFijado(); console.log(`${x.id}-${x.dtype}`.replace(/[^A-Za-z0-9._-]/g, "_")); })')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/agent-memory/models
+          key: modelo-${{ runner.os }}-${{ steps.modelo.outputs.id }}
+      - run: npm run model:fetch
       - run: npm test
       - name: package smoke test
         run: |
