@@ -41,3 +41,44 @@ for (const texto of consultas) {
   console.log(`  top3 JS ${porJs.slice(0, 3).map((x) => `${x.clave}=${x.s.toFixed(4)}`).join(", ")}`);
 }
 db.close();
+
+// Segunda pasada: archivos del modelo, tokens, pooling y, en Windows, fp32 frente a q8.
+const { createHash } = await import("node:crypto");
+const { readdirSync, statSync, mkdtempSync } = await import("node:fs");
+const { join } = await import("node:path");
+const { tmpdir } = await import("node:os");
+const { cacheModelos } = await import(`${raiz}dist/search/models.js`);
+const modelo = modeloFijado();
+const carpeta = join(cacheModelos(), ...modelo.id.split("/"));
+const listar = (dir, prefijo = "") =>
+  readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? listar(join(dir, n), `${prefijo}${n}/`) : [`${prefijo}${n}`]));
+console.log("\narchivos del modelo:");
+for (const archivo of listar(carpeta)) {
+  const ruta = join(carpeta, archivo);
+  console.log(`  ${archivo} ${statSync(ruta).size} B sha256 ${createHash("sha256").update(readFileSync(ruta)).digest("hex").slice(0, 16)}`);
+}
+const tf = await import("@huggingface/transformers");
+tf.env.cacheDir = cacheModelos();
+tf.env.localModelPath = cacheModelos();
+tf.env.allowLocalModels = true;
+tf.env.allowRemoteModels = false;
+const frase = "cómo nombrar una branch nueva";
+const tokenizer = await tf.AutoTokenizer.from_pretrained(modelo.id);
+console.log(`tokens «${frase}»: ${JSON.stringify(Array.from(tokenizer(frase).input_ids.data, Number))}`);
+const extractor = await tf.pipeline("feature-extraction", modelo.id, { dtype: modelo.dtype });
+for (const pooling of ["cls", "mean"]) {
+  const crudo = (await extractor(frase, { pooling, normalize: false })).data;
+  const max = crudo.reduce((m, x, i) => (Math.abs(x) > Math.abs(m.v) ? { i, v: x } : m), { i: -1, v: 0 });
+  console.log(`q8 ${pooling} sin normalizar: [0..4] ${f(crudo)} · norma ${norma(crudo).toFixed(4)} · máx |x| dim ${max.i} = ${max.v.toFixed(4)}`);
+}
+const todo = (await extractor(frase, { pooling: "none", normalize: false }));
+console.log(`q8 sin pooling: dims ${JSON.stringify(todo.dims)} · token0[0..4] ${f(todo.data)} · token1[0..4] ${f(todo.data.slice(todo.dims[2]))}`);
+if (process.platform === "win32") {
+  const otra = mkdtempSync(join(tmpdir(), "diag-fp32-"));
+  tf.env.cacheDir = otra;
+  tf.env.localModelPath = otra;
+  tf.env.allowRemoteModels = true;
+  const fp32 = await tf.pipeline("feature-extraction", modelo.id, { dtype: "fp32" });
+  const q = (await fp32(frase, { pooling: modelo.pooling, normalize: true })).data;
+  console.log(`fp32 en Windows: q[0..4] ${f(q)}`);
+}

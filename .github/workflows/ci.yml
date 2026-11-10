@@ -44,29 +44,6 @@ jobs:
       - name: diagnóstico temporal de embeddings
         continue-on-error: true
         run: node --disable-warning=ExperimentalWarning .github/diagnostico-embeddings.mjs
-      # TEMPORAL: diagnóstico de PowerShell con un entorno mínimo, para el stop colgado en Windows.
-      - name: diagnóstico temporal de PowerShell
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: |
-          cat > "$RUNNER_TEMP/diag.mjs" <<'EOF'
-          import { execFileSync } from "node:child_process";
-          const ps = `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
-          const q = `(Get-CimInstance Win32_Process -Filter 'ProcessId=${process.pid}').CommandLine`;
-          const base = { SystemRoot: process.env.SystemRoot, ComSpec: process.env.ComSpec, PATHEXT: process.env.PATHEXT, TEMP: process.env.TEMP, TMP: process.env.TMP, PATH: `${process.env.SystemRoot}\\System32` };
-          const extra = { windir: process.env.windir, LOCALAPPDATA: process.env.LOCALAPPDATA, APPDATA: process.env.APPDATA, PSModulePath: process.env.PSModulePath };
-          const casos = { completo: process.env, minimo: base, minimoConHome: { ...base, USERPROFILE: process.env.RUNNER_TEMP }, conExtra: { ...base, ...extra }, conExtraYHome: { ...base, ...extra, USERPROFILE: process.env.RUNNER_TEMP } };
-          for (const [n, env] of Object.entries(casos)) {
-            const t = Date.now();
-            try {
-              const out = execFileSync(ps, ["-NoProfile", "-NonInteractive", "-Command", q], { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
-              console.log(n, Date.now() - t, "ms", JSON.stringify(out.trim().slice(0, 100)));
-            } catch (e) {
-              console.log(n, Date.now() - t, "ms ERROR", e.code, e.signal, String(e.stderr).slice(0, 400));
-            }
-          }
-          EOF
-          node "$RUNNER_TEMP/diag.mjs"
       - run: npm test
       - name: package smoke test
         run: |
