@@ -87,6 +87,11 @@ export class MemoryStore {
     return this.reloj();
   }
 
+  /** La misma redacción que se aplica al guardar: para armar un borrador con su huella. */
+  redactarTexto(texto: string): { texto: string; redactados: string[] } {
+    return this.redactarCampo(texto);
+  }
+
   close(): void {
     this.db.close();
   }
