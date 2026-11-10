@@ -3,6 +3,8 @@ name: publish
 on:
   release:
     types: [published]
+  # Para relanzar una publicación que falló sin crear otro release.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,6 +22,8 @@ jobs:
       # Trusted publishing (OIDC) needs npm 11.5.1 or newer; no token is stored.
       - run: npm install -g npm@^11.5.1
       - run: npm ci
+      # prepublishOnly corre las pruebas de búsqueda, que usan el modelo de embeddings real sin red.
+      - run: npm run model:fetch
       # npm publish runs prepublishOnly (typecheck + tests) and prepack (clean build).
       # With trusted publishing, npm adds provenance automatically.
       - run: npm publish
