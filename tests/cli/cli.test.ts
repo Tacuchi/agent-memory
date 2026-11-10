@@ -117,7 +117,7 @@ describe("start, status, search y stop", () => {
     const r = await correr(e, ["doctor"]);
     expect(r.stdout).toMatch(new RegExp(`ok {4}servicio: responde en 127\\.0\\.0\\.1:${e.port}`));
     // Windows no tiene permisos POSIX: el token no se puede dejar en 0600 y doctor no lo exige.
-    expect(r.stdout).toMatch(process.platform === "win32" ? /ok {4}token: .* en Windows sin permisos 0600/ : /ok {4}token: .* con permisos 0600/);
+    expect(r.stdout).toMatch(process.platform === "win32" ? /ok {4}token: .*en Windows sin permisos 0600/ : /ok {4}token: .* con permisos 0600/);
     expect(r.stdout).toMatch(/aviso modelo: falta .*\n {6}arreglo: /);
   });
 

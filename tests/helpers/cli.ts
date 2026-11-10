@@ -65,6 +65,15 @@ export function ejecutableNode(carpeta: string, nombre: string, script: string):
   return sh;
 }
 
+const VARIABLES_BASE_WINDOWS = [
+  "SystemRoot", "windir", "SystemDrive", "ComSpec", "PATHEXT", "TEMP", "TMP", "LOCALAPPDATA", "APPDATA",
+  "ProgramData", "ProgramFiles", "PSModulePath", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
+];
+
+function variablesBaseWindows(): NodeJS.ProcessEnv {
+  return Object.fromEntries(VARIABLES_BASE_WINDOWS.filter((v) => process.env[v] !== undefined).map((v) => [v, process.env[v]]));
+}
+
 /** Windows no tiene git en System32: la carpeta del `git.exe` del PATH de las pruebas, para resolver repos. */
 function carpetaGitWindows(): string[] {
   const dir = (process.env.PATH ?? "").split(delimiter).find((d) => d && existsSync(join(d, "git.exe")));
@@ -91,17 +100,9 @@ export async function entornoCli(opciones: { claude?: boolean } = {}): Promise<E
     FAKE_CLAUDE_LOG: logClaude,
     FAKE_CLAUDE_STATE: estadoClaude,
     LANG: "C.UTF-8",
-    // Windows: su HOME es USERPROFILE (lo lee os.homedir()) y sin SystemRoot ni ComSpec no corren ni la red ni cmd.exe.
-    ...(WINDOWS
-      ? {
-          USERPROFILE: home,
-          SystemRoot: process.env.SystemRoot,
-          ComSpec: process.env.ComSpec,
-          PATHEXT: process.env.PATHEXT,
-          TEMP: process.env.TEMP,
-          TMP: process.env.TMP,
-        }
-      : {}),
+    // Windows: su HOME es USERPROFILE (lo lee os.homedir()); las variables base del sistema son las que
+    // necesitan la red, cmd.exe y PowerShell para funcionar.
+    ...(WINDOWS ? { ...variablesBaseWindows(), USERPROFILE: home } : {}),
   };
   const e: EntornoCli = {
     raiz: dir,

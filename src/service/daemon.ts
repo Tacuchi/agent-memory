@@ -70,9 +70,12 @@ export function esServicio(pid: number): boolean {
   }
 }
 
-/** Línea de comando de un proceso: `ps` en macOS y Linux; en Windows, que no tiene `ps`, la consulta CIM. */
+/**
+ * Línea de comando de un proceso: `ps` en macOS y Linux; en Windows, que no tiene `ps`, la consulta CIM.
+ * Con tope de tiempo: si la consulta no responde, el pid no se da por servicio y nunca se lo mata.
+ */
 function lineaDeComando(pid: number): string {
-  const opciones: ExecFileSyncOptionsWithStringEncoding = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true };
+  const opciones: ExecFileSyncOptionsWithStringEncoding = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 15_000 };
   if (process.platform !== "win32") return execFileSync("ps", ["-o", "command=", "-p", String(pid)], opciones);
   // Ruta absoluta: no depende del PATH de quien llama.
   const powershell = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
