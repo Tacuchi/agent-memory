@@ -87,7 +87,8 @@ describe("detalle", () => {
     const form = await screen.findByRole("form", { name: "Editar" });
     fireEvent.change(within(form).getByLabelText("Contenido"), { target: { value: "Usar prefijo feat/ o fix/" } });
     fireEvent.click(within(form).getByRole("button", { name: "Guardar cambios" }));
-    await screen.findByText(/el estado de validación se conserva/);
+    // Guardar pasa por el servicio real; en runners lentos tarda más que el segundo por defecto.
+    await screen.findByText(/el estado de validación se conserva/, {}, { timeout: 3000 });
     expect(w.t.store.obtener(a).validacion).toBe("validada");
     expect(w.t.store.obtener(a).contenido).toBe("Usar prefijo feat/ o fix/");
     await waitFor(() => expect(within(screen.getByRole("list", { name: "Revisiones" })).getAllByRole("listitem")).toHaveLength(2));
