@@ -40,17 +40,26 @@ jobs:
           path: ~/.cache/agent-memory/models
           key: modelo-${{ runner.os }}-${{ steps.modelo.outputs.id }}
       - run: npm run model:fetch
-      # TEMPORAL: diagnóstico de la búsqueda por vector en cada sistema.
-      - name: diagnóstico temporal de embeddings
-        continue-on-error: true
-        run: node --disable-warning=ExperimentalWarning .github/diagnostico-embeddings.mjs
+      # Los kernels cuantizados de ONNX cambian según la CPU: queda anotado en cada corrida para comparar fallas.
+      - name: CPU del runner
+        run: |
+          node -p '`${process.platform} ${process.arch} · ${require("node:os").cpus()[0]?.model}`'
+          if [ -r /proc/cpuinfo ]; then
+            flags=" $(grep -m1 '^flags' /proc/cpuinfo) "
+            for f in avx2 avx512f avx512_vnni avx_vnni; do case "$flags" in *" $f "*) echo "$f: sí";; *) echo "$f: no";; esac; done
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            sysctl hw.optional.arm.FEAT_DotProd hw.optional.arm.FEAT_I8MM 2>/dev/null || true
+          else
+            echo "flags de VNNI: no disponibles en $RUNNER_OS"
+          fi
       - run: npm test
       - name: package smoke test
         run: |
           mkdir -p "$RUNNER_TEMP/pack" "$RUNNER_TEMP/global"
           npm pack --pack-destination "$RUNNER_TEMP/pack"
           npm install -g --prefix "$RUNNER_TEMP/global" "$RUNNER_TEMP"/pack/tacuchi-agent-memory-*.tgz
-          if [ "$RUNNER_OS" = "Windows" ]; then bin="$RUNNER_TEMP/global"; else bin="$RUNNER_TEMP/global/bin"; fi
+          # En Windows, el PATH de bash va en forma /d/…: los dos puntos de «D:» lo partirían en dos.
+          if [ "$RUNNER_OS" = "Windows" ]; then bin="$(cygpath -u "$RUNNER_TEMP")/global"; else bin="$RUNNER_TEMP/global/bin"; fi
           export PATH="$bin:$PATH"
           agent-memory --version
           export AGENT_MEMORY_HOME="$RUNNER_TEMP/am-home"
