@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-memory",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Memoria local para agentes de código: almacén SQLite con búsqueda híbrida, servicio local con token, servidor MCP y conexión con Claude Code.",
   "type": "module",
   "license": "MIT",

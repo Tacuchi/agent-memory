@@ -3,7 +3,7 @@
 FROM node:22-slim
 
 # Same published version as the machines that use the relay.
-ARG AGENT_MEMORY_VERSION=0.3.1
+ARG AGENT_MEMORY_VERSION=0.3.2
 RUN npm install -g --omit=dev "@tacuchi/agent-memory@${AGENT_MEMORY_VERSION}" && npm cache clean --force
 
 USER node
