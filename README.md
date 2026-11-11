@@ -125,6 +125,33 @@ The reader gets a read-only credential valid for 30 days. The owner can renew it
 - Every read and every rejection is logged on the owner, under **Remote access**.
 - **Revoke** or **turn access off** in the web UI. The next request from that device is rejected.
 
+### Relay dashboard (optional)
+
+The relay can serve a dashboard at `https://<relay>/dashboard` that lists every PC using it, by name:
+
+- who reads each PC's memory (scope, expiry, last use) and which memories it reads;
+- active link codes (expiry only, never the code), current connections and 7-day usage;
+- IPs that fail the relay key, and blocked PCs or IPs.
+
+From there you can close a PC's connections, close all, block a PC or an IP for 1 h, 24 h or until unblocked,
+revoke a link and remove a link. Actions that **widen** access (renew, change scope, new code) are only requests:
+they wait in **Remote access → *Pedidos del panel*** on the owner's web UI until you accept them there. A code accepted
+there is shown only on that PC.
+
+Each PC 0.3.0 reports metadata to the relay (name, links, scope, expiry, usage counts) over its own channel. Memory
+content stays end-to-end encrypted; the relay keeps the dashboard state in memory only. The PC name defaults to the
+host name and can be changed in **Remote access** (*Nombre de esta PC*). PCs on 0.2.0 keep working and show as "no report".
+
+The dashboard is protected by [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/),
+and the relay verifies the Access JWT itself:
+
+1. Create a self-hosted Access application for `<relay host>/dashboard*` with a policy that allows only you.
+2. Start the relay with `AGENT_MEMORY_RELAY_ACCESS_TEAM=<team name>` (from `<team>.cloudflareaccess.com`) and
+   `AGENT_MEMORY_RELAY_ACCESS_AUD=<application audience tag>`. Without both, `/dashboard` answers `404`.
+3. Requests without a valid Access JWT get `401`; actions also require the page's own origin.
+
+The dashboard refreshes every 10 seconds; keep any per-IP rate limit in front of the relay above that.
+
 ## Paths it uses
 
 | What | Default | Override |
