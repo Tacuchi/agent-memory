@@ -88,10 +88,13 @@ describe("informe de cada PC al relé", () => {
     expect(pc).toMatchObject({ informe: false, huella: expect.stringMatching(/^ip-/), conexiones: [expect.objectContaining({ estado: "esperando" })] });
   });
 
-  it("una IP que falla la clave figura entre las desconocidas (AC-02)", async () => {
+  it("una IP que falla la clave figura entre las desconocidas; un chequeo sin clave no (AC-02)", async () => {
     const rele = await releLocal();
     abiertos.push(rele);
     const http = rele.url.replace(/^ws/, "http");
+    // Chequeos de salud y monitores: sin cabecera de autorización. Responden 401 pero no cuentan como intentos.
+    for (let i = 0; i < 4; i++) expect((await fetch(`${http}/`)).status).toBe(401);
+    expect(rele.estado.vista("prueba", 256).desconocidas).toEqual([]);
     for (let i = 0; i < 3; i++) await fetch(`${http}/`, { headers: { authorization: "Bearer clave-mala-clave-mala-clave-mala" } });
     const [d] = rele.estado.vista("prueba", 256).desconocidas;
     expect(d).toMatchObject({ rechazos: 3 });

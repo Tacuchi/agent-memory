@@ -116,6 +116,11 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
     const valor = cabecera.startsWith("Bearer ") ? cabecera.slice(7) : "";
     return timingSafeEqual(sha(valor), huella);
   };
+  // Un intento contra la clave trae una clave. Sin cabecera es un chequeo de salud, un monitor que acepta el 401 o un
+  // escáner: responde 401 igual, pero no ensucia «desconocidas» del panel.
+  const rechazarClave = (req: IncomingMessage): void => {
+    if (req.headers.authorization) estado.rechazo(ipDe(req));
+  };
 
   const servidor: Server = createServer((req, res) => {
     const ruta = (req.url ?? "/").split("?")[0] ?? "/";
@@ -128,7 +133,7 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
     }
     // Sin upgrade no hay nada que servir; con la clave, 204 sirve para comprobar que el relé se alcanza.
     const ok = autorizado(req);
-    if (!ok) estado.rechazo(ipDe(req));
+    if (!ok) rechazarClave(req);
     res.writeHead(ok ? 204 : 401, { "content-length": "0" }).end();
   });
 
@@ -186,7 +191,7 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
     const cabeceraPc = req.headers[CABECERA_PC];
     const pc = typeof cabeceraPc === "string" && HUELLA_PC.test(cabeceraPc) ? cabeceraPc : null;
     if (!autorizado(req)) {
-      estado.rechazo(ip);
+      rechazarClave(req);
       return rechazar(socket, 401, "Unauthorized");
     }
     if (estado.bloqueado(pc, ip)) return rechazar(socket, 403, "Forbidden");
