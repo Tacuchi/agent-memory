@@ -111,11 +111,16 @@ TLS inside it.
 
 ### 3. Pair
 
-1. On the machine that **owns** the memory, open **Remote access**, turn access on and choose **Invite a PC**
-   (*Invitar una PC*). Tick what the other PC will read (global, projects, repos, unvalidated entries) and generate a
-   code. The code is valid for 10 minutes and allows 5 attempts.
-2. On the **reading** machine, open **Remote access** → **Paste a code** (*Pegar un código*), or run
-   `agent-memory remote link <code>`.
+1. On the machine that **owns** the memory, open **Remote access**, turn sharing on and choose **Connect another PC**
+   (*Conectar otra PC*) → **Share your memory**. Tick what the other PC will read (global, projects, repos, unvalidated
+   entries) and generate a code. The code is valid for 10 minutes and allows 5 attempts.
+2. On the **reading** machine, open **Remote access** → **Connect another PC** → **Read its memory** and paste the
+   code, or run `agent-memory remote link <code>`.
+
+**Remote access** shows this PC (the only local one) and one card per connected PC. Each card shows both directions,
+like location sharing: what you share with that PC and what it shares with you. Each card has its own activity: what
+that PC read from your memory and what you read from its memory. The reading side keeps its half locally: the tool
+and the entry ids, never the search text or the content.
 
 No names to type: each PC sends the name it has configured. The reader gets an identifier derived from the owner's
 name (`Work laptop` → `work-laptop`, `-2` if taken). That identifier is how agents refer to that origin; rename it
