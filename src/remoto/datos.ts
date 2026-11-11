@@ -47,6 +47,31 @@ export interface UsoDia {
   rechazos: number;
 }
 
+/** Una consulta que esta PC hizo a otra (lectora), sin el contenido devuelto. */
+export interface Consulta {
+  id: number;
+  fecha: string;
+  huella: string;
+  origen: string;
+  herramienta: string;
+  pedido: string | null;
+  ids: number[];
+  resultado: "lectura" | "rechazo";
+  motivo: string | null;
+}
+
+interface FilaConsulta {
+  id: number;
+  fecha: string;
+  huella: string;
+  origen: string;
+  herramienta: string;
+  pedido: string | null;
+  ids: string | null;
+  resultado: "lectura" | "rechazo";
+  motivo: string | null;
+}
+
 export type AccionPendiente = "renovar" | "alcance" | "codigo";
 
 /** Pedido del panel del relé que amplía el acceso: espera la decisión de la persona en la web local (D01). */
@@ -337,6 +362,59 @@ export class DatosRemotos {
     return this.db.prepare("DELETE FROM remoto_enlaces WHERE origen = ?").run(origen).changes === 1;
   }
 
+  // ── Consultas hechas por esta PC (lectora) ───────────────────────────────────
+
+  registrarConsulta(c: Omit<Consulta, "id" | "fecha">): void {
+    this.db
+      .prepare("INSERT INTO remoto_consultas (fecha, huella, origen, herramienta, pedido, ids, resultado, motivo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(this.ahora(), c.huella, c.origen, c.herramienta, c.pedido, JSON.stringify(c.ids), c.resultado, c.motivo);
+  }
+
+  consultas(huella: string, limite = 50): Consulta[] {
+    const filas = this.db.prepare("SELECT * FROM remoto_consultas WHERE huella = ? ORDER BY id DESC LIMIT ?").all(huella, limite) as unknown as FilaConsulta[];
+    return filas.map((f) => ({
+      id: f.id,
+      fecha: f.fecha,
+      huella: f.huella,
+      origen: f.origen,
+      herramienta: f.herramienta,
+      pedido: f.pedido,
+      ids: f.ids ? (JSON.parse(f.ids) as number[]) : [],
+      resultado: f.resultado,
+      motivo: f.motivo,
+    }));
+  }
+
+  /** Conteos de hoy (día UTC, como el resto de las fechas) para el resumen de cada conexión. */
+  actividadHoy(): { leyo: Map<number, number>; rechazosDuena: Map<number, number>; lei: Map<string, number>; rechazosLectora: Map<string, number>; desconocidas: number } {
+    const desde = `${this.ahora().slice(0, 10)}T00:00:00.000Z`;
+    const leyo = new Map<number, number>();
+    const rechazosDuena = new Map<number, number>();
+    let desconocidas = 0;
+    // Lo leído cuenta solo las cuatro lecturas; los rechazos, de cualquier herramienta (conexión, enlazar…).
+    const filas = this.db
+      .prepare(
+        `SELECT dispositivo_id AS id, resultado, COUNT(*) AS n FROM remoto_registro
+         WHERE fecha >= ? AND (resultado = 'rechazo' OR herramienta IN ('buscar','leer','listar','revisiones'))
+         GROUP BY dispositivo_id, resultado`,
+      )
+      .all(desde) as { id: number | null; resultado: string; n: number }[];
+    for (const f of filas) {
+      if (f.id === null) {
+        if (f.resultado === "rechazo") desconocidas += Number(f.n);
+        continue;
+      }
+      (f.resultado === "rechazo" ? rechazosDuena : leyo).set(f.id, Number(f.n));
+    }
+    const lei = new Map<string, number>();
+    const rechazosLectora = new Map<string, number>();
+    const consultas = this.db
+      .prepare("SELECT huella, resultado, COUNT(*) AS n FROM remoto_consultas WHERE fecha >= ? GROUP BY huella, resultado")
+      .all(desde) as { huella: string; resultado: string; n: number }[];
+    for (const f of consultas) (f.resultado === "rechazo" ? rechazosLectora : lei).set(f.huella, Number(f.n));
+    return { leyo, rechazosDuena, lei, rechazosLectora, desconocidas };
+  }
+
   // ── Uso por día (dueña y lectora) ────────────────────────────────────────────
 
   sumarUso(cambio: Partial<Omit<UsoDia, "dia">>): void {
@@ -399,13 +477,19 @@ export class DatosRemotos {
       .run(this.ahora(), r.dispositivoId, r.dispositivo, r.herramienta, r.pedido, JSON.stringify(r.ids), r.resultado, r.motivo);
   }
 
-  registro(filtro: { dispositivoId?: number; soloRechazos?: boolean; limite?: number } = {}): RegistroRemoto[] {
+  registro(filtro: { dispositivoId?: number; dispositivoIds?: number[]; soloRechazos?: boolean; soloDesconocidas?: boolean; limite?: number } = {}): RegistroRemoto[] {
     const partes: string[] = [];
     const params: (string | number)[] = [];
     if (filtro.dispositivoId !== undefined) {
       partes.push("dispositivo_id = ?");
       params.push(filtro.dispositivoId);
     }
+    if (filtro.dispositivoIds !== undefined) {
+      if (!filtro.dispositivoIds.length) return [];
+      partes.push(`dispositivo_id IN (${filtro.dispositivoIds.map(() => "?").join(",")})`);
+      params.push(...filtro.dispositivoIds);
+    }
+    if (filtro.soloDesconocidas) partes.push("dispositivo_id IS NULL");
     if (filtro.soloRechazos) partes.push("resultado = 'rechazo'");
     const filas = this.db
       .prepare(`SELECT * FROM remoto_registro ${partes.length ? `WHERE ${partes.join(" AND ")}` : ""} ORDER BY id DESC LIMIT ?`)

@@ -60,7 +60,7 @@ export function EstaPc({
 
         <div className="celda">
           <span className="rotulo" id="rotulo-acceso">
-            Acceso
+            Compartir
           </span>
           <label className="interruptor">
             <input
@@ -75,7 +75,7 @@ export function EstaPc({
                 void acceso.ejecutar(async () => {
                   await cliente("remoto_interruptor", { encendido });
                   if (!encendido) alApagar();
-                }, encendido ? "Acceso encendido: las PCs enlazadas pueden leer" : "Acceso apagado: ninguna PC puede leer");
+                }, encendido ? "Compartir encendido: las PCs conectadas pueden leer lo que les compartís" : "Compartir apagado: ninguna PC puede leer tu memoria");
               }}
             />
             <span id="estado-acceso" className={estado.interruptor ? "encendido" : undefined}>

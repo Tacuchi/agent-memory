@@ -49,8 +49,39 @@ export interface PedidoPanel {
 
 export type CodigoNuevo = { codigo: string; vence_en: string };
 
+/** Una PC conectada (0.4.1): los dos sentidos unidos por la huella de su clave. */
+export interface Conexion {
+  huella: string;
+  nombre: string;
+  /** Esta PC le comparte su memoria (la otra la lee). */
+  comparto: {
+    id: number;
+    estado: "vigente" | "credencial_vencida" | "revocado";
+    alcance: Alcance;
+    usado_en: string | null;
+    vence_en: string;
+    revocado_en: string | null;
+  } | null;
+  /** La otra PC le comparte la suya a esta (esta la lee). */
+  leo: { origen: string; enlazado_en: string; usado_en: string | null; vence_en: string } | null;
+  hoy: { leyo: number; lei: number; rechazos: number };
+}
+
+/** Una fila de actividad de una conexión: lo que leyó de esta memoria o lo que esta PC leyó de la suya. */
+export interface FilaActividad {
+  fecha: string;
+  herramienta: string;
+  pedido: string | null;
+  ids: number[];
+  resultado: "lectura" | "rechazo";
+  motivo: string | null;
+}
+
 export interface Estado {
   interruptor: boolean;
+  /** Faltan en servicios anteriores a 0.4.1. */
+  conexiones?: Conexion[];
+  desconocidas_hoy?: number;
   /** Falta cuando responde un servicio de una versión anterior a esta web. */
   nombre_pc?: string;
   panel?: "conectado" | "conectando" | "inactivo";

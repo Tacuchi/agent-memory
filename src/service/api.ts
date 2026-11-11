@@ -88,7 +88,7 @@ const ESQUEMAS = {
   remoto_revocar: z.object({ id }).strict(),
   remoto_renovar: z.object({ id }).strict(),
   remoto_alcance: z.object({ id, ambitos: z.array(ambitoAlcance).max(50), no_validadas: z.boolean() }).strict(),
-  remoto_registro: z.object({ dispositivo_id: id.optional(), solo_rechazos: z.boolean().optional(), limite: z.number().int().min(1).max(1000).optional() }).strict(),
+  remoto_registro: z.object({ dispositivo_id: id.optional(), solo_rechazos: z.boolean().optional(), solo_desconocidas: z.boolean().optional(), limite: z.number().int().min(1).max(1000).optional() }).strict(),
   // Panel del relé (plan 007): nombre de esta PC y pedidos del panel que amplían el acceso (D01).
   remoto_nombre: z.object({ nombre: z.string().min(1).max(200) }).strict(),
   remoto_pendiente: z.object({ id, aceptar: z.boolean() }).strict(),
@@ -99,6 +99,7 @@ const ESQUEMAS = {
   remoto_rele: z.object({ url: z.string().min(1).max(500), clave: z.string().min(1).max(500) }).strict(),
   remoto_rele_probar: z.object({}).strict(),
   remoto_ambitos: z.object({}).strict(),
+  remoto_actividad: z.object({ huella: z.string().min(1).max(64), limite: z.number().int().min(1).max(1000).optional() }).strict(),
   // Enlace remoto desde la CLI (token): configurar el relé, canjear un código como lectora y ver el estado sin secretos.
   enlace_estado: z.object({}).strict(),
   enlace_rele: z.object({ url: z.string().min(1), clave: z.string().min(1) }).strict(),
@@ -132,6 +133,7 @@ const SOLO_PERSONA: ReadonlySet<Operacion> = new Set([
   "remoto_rele",
   "remoto_rele_probar",
   "remoto_ambitos",
+  "remoto_actividad",
 ]);
 
 export interface OpcionesApi {
@@ -437,10 +439,15 @@ export class Api {
     return { ambitos: filas.map((f) => ({ ambito: f.ambito, ref: f.ambito === "global" ? null : f.ref, entradas: Number(f.entradas) })) };
   }
 
+  private remoto_actividad(d: z.infer<typeof ESQUEMAS.remoto_actividad>) {
+    return this.enlace().actividad(d.huella, d.limite);
+  }
+
   private remoto_registro(d: z.infer<typeof ESQUEMAS.remoto_registro>) {
     const registro = this.enlace().datos.registro({
       ...(d.dispositivo_id !== undefined ? { dispositivoId: d.dispositivo_id } : {}),
       soloRechazos: Boolean(d.solo_rechazos),
+      soloDesconocidas: Boolean(d.solo_desconocidas),
       ...(d.limite !== undefined ? { limite: d.limite } : {}),
     });
     return {

@@ -163,6 +163,22 @@ const MIGRACIONES: readonly string[] = [
   ALTER TABLE remoto_enlaces ADD COLUMN nombre TEXT;
   ALTER TABLE remoto_codigos ADD COLUMN alcance TEXT;
   `,
+  // Actividad por conexión (0.4.1): lo que esta PC leyó de cada otra, por la huella de la dueña (sobrevive a renombrar
+  // y a volver a enlazar). Queda solo en esta PC.
+  `
+  CREATE TABLE remoto_consultas (
+    id          INTEGER PRIMARY KEY,
+    fecha       TEXT NOT NULL,
+    huella      TEXT NOT NULL,
+    origen      TEXT NOT NULL,
+    herramienta TEXT NOT NULL,
+    pedido      TEXT,
+    ids         TEXT,
+    resultado   TEXT NOT NULL CHECK (resultado IN ('lectura','rechazo')),
+    motivo      TEXT
+  );
+  CREATE INDEX remoto_consultas_huella ON remoto_consultas(huella, id);
+  `,
 ];
 
 export const VERSION_ESQUEMA = MIGRACIONES.length;

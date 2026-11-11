@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { mensajeError, type Cliente } from "../api";
 import { Aviso } from "./comunes";
+import { Conexiones } from "./remoto/Conexiones";
 import { EstaPc } from "./remoto/EstaPc";
-import { Lee } from "./remoto/Lee";
-import { Leen } from "./remoto/Leen";
 import { Pedidos } from "./remoto/Pedidos";
-import { RegistroRemoto } from "./remoto/Registro";
 import type { CodigoNuevo, Estado } from "./remoto/tipos";
 
-// «Acceso remoto»: barra «Esta PC» y, debajo, dos columnas por dirección (D03 de la spec 006): quién lee esta
-// memoria y qué memorias lee esta PC. Todo pasa por las operaciones remoto_* del servicio, que solo responden a la
-// sesión de la web.
+// «Acceso remoto»: barra «Esta PC» (la única local) y, debajo, una tarjeta por cada otra PC conectada, con los dos
+// sentidos y su actividad (0.4.1). Todo pasa por las operaciones remoto_* del servicio, que solo responden a la sesión
+// de la web.
 
 export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente; ahora?: () => number }) {
   const [estado, setEstado] = useState<Estado | null>(null);
@@ -34,7 +32,10 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
     <section className="hoja remoto" aria-labelledby="titulo-remoto">
       <div className="remoto-cabecera">
         <h2 id="titulo-remoto">Acceso remoto</h2>
-        <p className="meta">Otras PCs tuyas leen (nunca escriben) lo que elijas, a través de un relé que solo ve datos cifrados.</p>
+        <p className="meta">
+          Esta PC es la única local. Las demás son conexiones: en cada una ves qué le compartís y qué te comparte. Solo lectura, por
+          un relé que ve datos cifrados.
+        </p>
       </div>
       <Aviso texto={error} />
       {!estado && !error && <p className="meta">Cargando…</p>}
@@ -48,13 +49,9 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
           )}
           <div className="consola-remota">
             <EstaPc estado={estado} cliente={cliente} recargar={recargar} alApagar={() => setCodigo(null)} />
-            <div className="dos-columnas">
-              <Leen estado={estado} cliente={cliente} recargar={recargar} codigo={codigo} setCodigo={setCodigo} ahora={ahora} />
-              <Lee estado={estado} cliente={cliente} recargar={recargar} />
-            </div>
+            <Conexiones estado={estado} cliente={cliente} recargar={recargar} codigo={codigo} setCodigo={setCodigo} ahora={ahora} />
           </div>
           <Pedidos pedidos={estado.pendientes ?? []} cliente={cliente} recargar={recargar} alCodigo={setCodigo} />
-          <RegistroRemoto cliente={cliente} dispositivos={estado.dispositivos} version={estado} ahora={ahora} />
         </>
       )}
     </section>

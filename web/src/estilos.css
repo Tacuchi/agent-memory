@@ -323,7 +323,7 @@ dialog.hoja-inferior::backdrop { background: rgb(5 6 8 / 0.6); }
   dialog.hoja-inferior { animation: none; }
 }
 
-/* Acceso remoto: barra «Esta PC» y dos columnas por dirección. Las costuras salen del hueco de 1 px sobre el color
+/* Acceso remoto: barra «Esta PC» y una tarjeta por cada otra PC conectada. Las costuras salen del hueco de 1 px sobre el color
    de costura, así siguen enteras cuando las celdas se reacomodan en pantallas angostas. */
 .remoto-cabecera { display: grid; gap: 4px; }
 .remoto .meta { font-size: 13px; }
@@ -331,7 +331,6 @@ dialog.hoja-inferior::backdrop { background: rgb(5 6 8 / 0.6); }
 .consola-remota, .seccion-remota { background: var(--panel); border: 1px solid var(--costura); border-radius: 8px; }
 .remoto .ph h3 { font: inherit; letter-spacing: inherit; display: inline-flex; gap: 8px; align-items: baseline; }
 .remoto h3.ph { margin: 0; }
-.col-remota > .ph { min-height: 44px; }
 .ph-boton {
   min-height: 28px; padding: 2px 10px; font: 600 13px/18px var(--sans); letter-spacing: 0; text-transform: none; color: var(--texto);
 }
@@ -371,12 +370,6 @@ dialog.hoja-inferior::backdrop { background: rgb(5 6 8 / 0.6); }
 .senal.rechazada { color: var(--rechazada); }
 .senal.pendiente { color: var(--pendiente); }
 
-.dos-columnas { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: var(--costura); border-radius: 0 0 8px 8px; }
-.col-remota { background: var(--panel); min-width: 0; display: flex; flex-direction: column; }
-.col-remota:first-child { border-bottom-left-radius: 8px; }
-.col-remota:last-child { border-bottom-right-radius: 8px; }
-.col-cuerpo { display: flex; flex-direction: column; min-width: 0; }
-.col-remota.apagada .col-cuerpo { opacity: 0.55; }
 .nota-apagado {
   display: grid; gap: 2px; padding: 10px 16px; border-bottom: 1px solid var(--costura); background: var(--realce);
   color: var(--suave); font-size: 13px;
@@ -391,13 +384,7 @@ dialog.hoja-inferior::backdrop { background: rgb(5 6 8 / 0.6); }
 input.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .meta.invalido { color: var(--rechazada); }
 
-/* Filas de PCs y de enlaces */
-.items-remotos .item {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: start;
-  padding: 12px 16px; border-bottom: 1px solid var(--costura);
-}
-.items-remotos .item:last-child { border-bottom: 0; }
-.item-texto { display: grid; gap: 4px; min-width: 0; }
+/* Nombres, metadatos y chips de las conexiones */
 .item-nombre { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-weight: 600; overflow-wrap: anywhere; }
 .meta-linea { color: var(--suave); font-size: 12px; line-height: 18px; }
 .meta-linea .origen { color: var(--texto); }
@@ -406,11 +393,6 @@ code.item-nombre { font-family: var(--mono); font-size: 14px; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chips .chip { color: var(--texto); }
 .sin-alcance { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
-.item-acciones { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-.item-acciones button { min-height: 30px; padding: 4px 10px; font-size: 13px; font-weight: 550; }
-.item-extra { grid-column: 1 / -1; min-width: 0; }
-.item-extra:empty { display: none; }
-.item.revocado .item-nombre { color: var(--suave); font-weight: 500; }
 .confirmar {
   display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--peligro-borde); border-radius: 6px; font-size: 13px;
   background: color-mix(in srgb, var(--rechazada) 6%, transparent);
@@ -437,27 +419,55 @@ fieldset.selector-alcance { display: block; padding: 8px 12px 10px; }
 .codigo-estado [role="timer"].vencido { color: var(--rechazada); }
 
 /* Plegables: un chevrón de dos trazos, girado al abrir. */
-.revocadas > summary, .registro > summary { list-style: none; display: flex; align-items: center; gap: 10px; cursor: pointer; }
-.revocadas > summary::-webkit-details-marker, .registro > summary::-webkit-details-marker { display: none; }
-.revocadas > summary::before, .registro > summary::before {
+.actividad > summary, .terminadas > summary { list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; cursor: pointer; }
+.actividad > summary::-webkit-details-marker, .terminadas > summary::-webkit-details-marker { display: none; }
+.actividad > summary::before, .terminadas > summary::before {
   content: ""; width: 6px; height: 6px; flex: none; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg); transition: transform 150ms ease-out;
 }
-.revocadas[open] > summary::before, .registro[open] > summary::before { transform: rotate(45deg); }
-.revocadas { border-top: 1px solid var(--costura); }
-.revocadas > summary { min-height: 40px; padding: 0 16px; color: var(--suave); font-size: 13px; }
-.revocadas > summary:hover, .registro > summary:hover { color: var(--texto); }
-.registro > summary { min-height: 44px; padding: 8px 16px; color: var(--suave); }
-.registro > summary h3 { font: 600 11px/16px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; }
-.resumen-hoy { font-size: 13px; color: var(--suave); }
-.resumen-hoy .con-rechazos { color: var(--rechazada); }
-.registro-cuerpo { display: grid; gap: 12px; padding: 12px 16px 16px; border-top: 1px solid var(--costura); }
-.filtros-registro { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; }
-.filtros-registro select { min-width: 180px; }
-.registro table { min-width: 680px; }
-.registro td.num { white-space: nowrap; }
-.registro td.pedido { font: 12px/18px var(--mono); overflow-wrap: anywhere; }
-.registro td.rechazo { color: var(--rechazada); }
+.actividad[open] > summary::before, .terminadas[open] > summary::before { transform: rotate(45deg); }
+.actividad > summary:hover, .terminadas > summary:hover { color: var(--texto); }
+
+/* Conexiones: una tarjeta por PC, con los dos sentidos lado a lado y su actividad plegada debajo. */
+.conexiones { border-top: 1px solid var(--costura); }
+.conexiones > .ph { min-height: 44px; }
+.conectar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: var(--costura); border-bottom: 1px solid var(--costura); }
+.camino { background: var(--panel); padding: 14px 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.camino h4 { margin: 0; font-size: 14px; line-height: 20px; }
+.invitar, .codigo-vigente, .pegar { display: grid; gap: 10px; }
+.tarjetas > .conexion { display: grid; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--costura); }
+.conexion-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.conexion-cab .item-nombre { font-size: 15px; }
+.sentidos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.sentido { display: grid; gap: 8px; align-content: start; padding: 12px; border: 1px solid var(--costura); border-radius: 6px; min-width: 0; }
+.sentido.vacio { border-style: dashed; border-color: var(--costura-fuerte); color: var(--suave); }
+.sentido.apagado > :not(.sentido-titulo) { opacity: 0.55; }
+.sentido-titulo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; }
+.flecha { flex: none; }
+.flecha.sale { color: var(--validada); }
+.flecha.entra { color: var(--acento); }
+.sentido.vacio .flecha { color: var(--tenue); }
+.sentido .acciones { display: flex; flex-wrap: wrap; gap: 6px; }
+.sentido .acciones button { min-height: 30px; padding: 4px 10px; font-size: 13px; font-weight: 550; }
+.actividad { border-top: 1px solid var(--costura); padding-top: 8px; }
+.actividad > summary { min-height: 32px; color: var(--suave); }
+.actividad > summary .rotulo { font: 600 11px/16px var(--sans); letter-spacing: 0.08em; text-transform: uppercase; }
+.actividad .con-rechazos { color: var(--rechazada); }
+.actividad-listas { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin: 8px 0; }
+.lista-actividad h5 { margin: 0 0 4px; font-size: 12px; line-height: 18px; font-weight: 500; color: var(--suave); }
+.act-fila {
+  display: grid; grid-template-columns: 7.5em 6em minmax(0, 1fr); gap: 8px; padding: 5px 0; font-size: 13px;
+  border-bottom: 1px solid var(--costura);
+}
+.act-fila:last-child { border-bottom: 0; }
+.act-fila .num { color: var(--suave); white-space: nowrap; }
+.act-detalle { overflow-wrap: anywhere; }
+.act-fila.rechazo > :not(.num) { color: var(--rechazada); }
+.terminadas > summary { min-height: 40px; padding: 0 16px; color: var(--suave); font-size: 13px; }
+.terminadas .conexion.terminada { display: grid; gap: 4px; padding: 8px 16px 10px 34px; border-top: 1px solid var(--costura); }
+.terminadas .actividad { border-top: 0; padding-top: 0; }
+.desconocidas { display: grid; gap: 6px; padding: 10px 16px 12px; border-top: 1px solid var(--costura); }
+.desconocidas .act-fila { grid-template-columns: 9.5em 6em minmax(0, 1fr); }
 
 /* Pedidos del panel del relé, que esperan decisión. */
 .pedidos-panel { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--costura); }
@@ -474,17 +484,14 @@ fieldset.selector-alcance { display: block; padding: 8px 12px 10px; }
   .celdas { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
-  .dos-columnas { grid-template-columns: minmax(0, 1fr); }
-  .col-remota:first-child { border-bottom-left-radius: 0; }
-  .col-remota:last-child { border-bottom-left-radius: 8px; }
+  .conectar, .sentidos, .actividad-listas { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
   /* Nombre y relé a lo ancho; acceso y panel, que son una palabra, comparten fila. */
   .celdas { grid-auto-flow: dense; }
   .celdas > .celda:first-child, .celdas > .celda-rele { grid-column: 1 / -1; }
-  .items-remotos .item { grid-template-columns: minmax(0, 1fr); }
-  .item-acciones { justify-content: flex-start; }
-  .item-acciones button, .ph-boton { min-height: 40px; }
+  .sentido .acciones button, .ph-boton { min-height: 40px; }
+  .act-fila { grid-template-columns: 4.5em 5.5em minmax(0, 1fr); }
   .codigo-grande { font-size: 18px; line-height: 26px; }
   .casillas label.casilla { min-height: 44px; }
 }

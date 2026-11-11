@@ -9,23 +9,33 @@ afterEach(() => cleanup());
 const AHORA = new Date("2026-11-10T12:00:00Z").getTime();
 const CLAVE_RELE = "clave-secreta-del-rele";
 
-function dispositivo(id: number, nombre: string, extra: object = {}) {
+function comparto(id: number, extra: object = {}) {
   return {
     id,
-    nombre,
-    enlazado_en: "2026-11-01T10:00:00.000Z",
-    usado_en: "2026-11-09T18:30:00.000Z",
-    vence_en: "2026-12-01T10:00:00.000Z",
-    revocado_en: null,
     estado: "vigente",
     alcance: { ambitos: [] as object[], no_validadas: false },
+    usado_en: "2026-11-09T18:30:00.000Z",
+    vence_en: "2026-12-01T10:00:00.000Z",
+    revocado_en: null as string | null,
     ...extra,
   };
 }
 
-/** Cliente falso con el estado de una PC: registra cada operación con su cuerpo. */
+function leo(origen: string) {
+  return { origen, enlazado_en: "2026-11-02T10:00:00.000Z", usado_en: "2026-11-10T09:00:00.000Z", vence_en: "2026-12-02T10:00:00.000Z" };
+}
+
+const SIN_USO = { leyo: 0, lei: 0, rechazos: 0 };
+
+/** Cliente falso con el estado de una PC: registra cada operación con su cuerpo. Las conexiones mandan. */
 function clienteFalso(inicio: { interruptor?: boolean; rele?: { url: string } | null; prueba?: string; pendientes?: boolean } = {}) {
   const llamadas: [string, object][] = [];
+  const conexiones: any[] = [
+    { huella: "h-qtc", nombre: "laptop-qtc", comparto: comparto(1, { alcance: { ambitos: [{ ambito: "global", ref: null }], no_validadas: true } }), leo: leo("laptop-qtc"), hoy: { leyo: 2, lei: 3, rechazos: 1 } },
+    { huella: "h-casa", nombre: "desktop-casa", comparto: comparto(2), leo: null, hoy: SIN_USO },
+    { huella: "h-taller", nombre: "mini-taller", comparto: null, leo: leo("mini-taller"), hoy: SIN_USO },
+    { huella: "h-vieja", nombre: "laptop-vieja", comparto: comparto(3, { estado: "revocado", revocado_en: "2026-11-03T10:00:00.000Z" }), leo: null, hoy: SIN_USO },
+  ];
   const estado = {
     interruptor: inicio.interruptor ?? true,
     nombre_pc: "mac-de-prueba",
@@ -46,31 +56,26 @@ function clienteFalso(inicio: { interruptor?: boolean; rele?: { url: string } | 
       : []) as any[],
     rele: inicio.rele === undefined ? { url: "wss://rele.ejemplo" } : inicio.rele,
     codigo: null as null | { vence_en: string; intentos_restantes: number },
-    dispositivos: [
-      dispositivo(1, "casa", { alcance: { ambitos: [{ ambito: "global", ref: null }], no_validadas: false } }),
-      dispositivo(2, "Laptop trabajo"),
-      dispositivo(3, "vieja", { estado: "revocado", revocado_en: "2026-11-05T10:00:00.000Z" }),
-    ] as any[],
-    enlaces: [
-      { origen: "mac-personal", nombre: "Mac personal", enlazado_en: "2026-11-02T10:00:00.000Z", vence_en: "2026-12-02T10:00:00.000Z", usado_en: "2026-11-10T09:00:00.000Z" },
-    ] as any[],
+    desconocidas_hoy: 2,
   };
   let prueba = inicio.prueba ?? "responde";
-  const registro = [
-    { id: 3, fecha: "2026-11-09T11:00:00.000Z", dispositivo_id: 1, dispositivo: "casa", herramienta: "buscar", pedido: null, ids: [1], resultado: "lectura", motivo: null },
-    { id: 2, fecha: "2026-11-10T11:59:00.000Z", dispositivo_id: 1, dispositivo: "casa", herramienta: "aprobar", pedido: null, ids: [], resultado: "rechazo", motivo: "operacion_no_permitida" },
-    { id: 1, fecha: "2026-11-10T11:58:00.000Z", dispositivo_id: 1, dispositivo: "casa", herramienta: "buscar", pedido: '{"consulta":"deploy"}', ids: [7, 9], resultado: "lectura", motivo: null },
-  ];
-  const porId = (id: number) => estado.dispositivos.find((d) => d.id === id);
+  const vista = () => ({
+    ...structuredClone(estado),
+    conexiones: structuredClone(conexiones),
+    dispositivos: conexiones.filter((c) => c.comparto).map((c) => ({ ...c.comparto, nombre: c.nombre, enlazado_en: "2026-11-01T10:00:00.000Z" })),
+    enlaces: conexiones.filter((c) => c.leo).map((c) => ({ ...c.leo, nombre: c.nombre })),
+  });
+  const porId = (id: number) => conexiones.find((c) => c.comparto?.id === id).comparto;
+  const porOrigen = (origen: string) => conexiones.find((c) => c.leo?.origen === origen);
   const cliente: Cliente = async <T,>(op: string, cuerpo: object = {}): Promise<T> => {
     llamadas.push([op, cuerpo]);
     const c = cuerpo as any;
     switch (op) {
       case "remoto_estado":
-        return structuredClone(estado) as T;
+        return vista() as T;
       case "remoto_interruptor":
         estado.interruptor = c.encendido;
-        return structuredClone(estado) as T;
+        return vista() as T;
       case "remoto_ambitos":
         return {
           ambitos: [
@@ -85,25 +90,25 @@ function clienteFalso(inicio: { interruptor?: boolean; rele?: { url: string } | 
         return { codigo: "ABCD-EFGH-JKMN-PQRS", vence_en: new Date(AHORA + 600_000).toISOString() } as T;
       case "remoto_alcance":
         porId(c.id).alcance = { ambitos: c.ambitos, no_validadas: c.no_validadas };
-        return { dispositivo: porId(c.id) } as T;
+        return {} as T;
       case "remoto_revocar":
         porId(c.id).estado = "revocado";
         porId(c.id).revocado_en = new Date(AHORA).toISOString();
-        return { dispositivo: porId(c.id) } as T;
+        return {} as T;
       case "remoto_renovar":
-        return { dispositivo: porId(c.id) } as T;
+        return {} as T;
       case "remoto_nombre":
         estado.nombre_pc = c.nombre;
-        return structuredClone(estado) as T;
+        return vista() as T;
       case "remoto_canjear":
         if (c.codigo === "USADO") throw new ErrorApi("codigo_usado", "ese código ya se usó: pedí uno nuevo en la otra PC");
-        estado.enlaces.push({ origen: "laptop-trabajo", nombre: "Laptop trabajo", enlazado_en: new Date(AHORA).toISOString(), vence_en: "2026-12-10T12:00:00.000Z", usado_en: null });
-        return { origen: "laptop-trabajo", nombre: "Laptop trabajo", vence_en: "2026-12-10T12:00:00.000Z" } as T;
+        conexiones.find((x) => x.huella === "h-casa").leo = leo("desktop-casa");
+        return { origen: "desktop-casa", nombre: "desktop-casa", vence_en: "2026-12-10T12:00:00.000Z" } as T;
       case "remoto_enlace_quitar":
-        estado.enlaces = estado.enlaces.filter((e) => e.origen !== c.origen);
+        porOrigen(c.origen).leo = null;
         return { ok: true } as T;
       case "remoto_enlace_renombrar":
-        estado.enlaces.find((e) => e.origen === c.origen).origen = c.nuevo;
+        porOrigen(c.origen).leo.origen = c.nuevo;
         return { origen: c.nuevo } as T;
       case "remoto_rele":
         if (!/^wss?:\/\//.test(c.url)) throw new ErrorApi("rele_invalido", "la URL del relé debe empezar con ws:// o wss://");
@@ -120,144 +125,181 @@ function clienteFalso(inicio: { interruptor?: boolean; rele?: { url: string } | 
           ? { pendiente: resuelto, codigo: { codigo: "PANE-LCOD-IGO0-1234", vence_en: new Date(AHORA + 300_000).toISOString() } }
           : { pendiente: resuelto }) as T;
       }
+      case "remoto_actividad":
+        return {
+          leyo: [
+            { fecha: "2026-11-10T11:58:00.000Z", herramienta: "buscar", pedido: '{"consulta":"release npm"}', ids: [179, 83], resultado: "lectura", motivo: null },
+            { fecha: "2026-11-09T11:00:00.000Z", herramienta: "leer", pedido: '{"id":40}', ids: [], resultado: "rechazo", motivo: "no_encontrada" },
+          ],
+          lei: [{ fecha: "2026-11-10T11:50:00.000Z", herramienta: "listar", pedido: null, ids: [355, 352], resultado: "lectura", motivo: null }],
+        } as T;
       case "remoto_registro":
-        return { registro: registro.filter((r) => (!c.solo_rechazos || r.resultado === "rechazo") && (c.dispositivo_id === undefined || r.dispositivo_id === c.dispositivo_id)) } as T;
+        return {
+          registro: c.solo_desconocidas
+            ? [{ id: 9, fecha: "2026-11-10T11:00:00.000Z", dispositivo_id: null, dispositivo: null, herramienta: "conexion", pedido: null, ids: [], resultado: "rechazo", motivo: "desconocido" }]
+            : [],
+        } as T;
       default:
         throw new ErrorApi("ruta_desconocida", op);
     }
   };
-  return { cliente, llamadas, estado };
+  return { cliente, llamadas, estado, conexiones };
 }
 
 const ops = (llamadas: [string, object][]) => llamadas.map(([op]) => op);
-const leen = () => screen.getByRole("region", { name: "Leen esta memoria" });
-const lee = () => screen.getByRole("region", { name: "Esta PC lee" });
-const item = (lista: HTMLElement, texto: string) => within(lista).getByText(texto).closest("li") as HTMLElement;
+const seccion = () => screen.getByRole("region", { name: /^Conexiones/ });
+const tarjeta = (nombre: string) =>
+  within(within(seccion()).getByRole("list", { name: "PCs conectadas" })).getByText(nombre, { selector: ".item-nombre" }).closest("li") as HTMLElement;
+const comparto_ = (nombre: string) => screen.getByRole("group", { name: `Le compartís tu memoria a ${nombre}` });
+const leo_ = (nombre: string) => screen.getByRole("group", { name: `${nombre} te comparte la suya` });
 
 async function montar(f = clienteFalso()) {
   render(<Remoto cliente={f.cliente} ahora={() => AHORA} />);
-  await screen.findByRole("region", { name: "Leen esta memoria" });
+  await screen.findByRole("region", { name: /^Conexiones/ });
   return f;
 }
 
 describe("pantalla «Acceso remoto»", () => {
-  it("dibuja la barra «Esta PC» y las dos columnas, en ese orden, con PCs y enlaces (AC-01)", async () => {
+  it("una tarjeta por PC conectada, con los dos sentidos; las terminadas plegadas al final", async () => {
     await montar();
     const barra = screen.getByRole("group", { name: "Esta PC" });
-    const columnas = [leen(), lee()];
-    expect(barra.compareDocumentPosition(columnas[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(columnas[0]!.compareDocumentPosition(columnas[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(barra).getByText("mac-de-prueba")).toBeTruthy();
-    expect(await within(barra).findByText("responde")).toBeTruthy();
-    expect(within(barra).getByText("conectado")).toBeTruthy();
+    expect(barra.compareDocumentPosition(seccion()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(seccion()).getByRole("heading", { level: 3 }).textContent).toBe("Conexiones · 3");
+    const lista = within(seccion()).getByRole("list", { name: "PCs conectadas" });
+    expect(within(lista).getAllByText(/./, { selector: ".item-nombre" }).map((n) => n.textContent)).toEqual(["laptop-qtc", "desktop-casa", "mini-taller"]);
 
-    const lectoras = within(leen()).getByRole("list", { name: "PCs que leen esta memoria" });
-    expect(within(lectoras).getAllByRole("listitem").map((li) => li.querySelector(".item-nombre")!.textContent)).toEqual(["casa", "Laptop trabajo"]);
-    const enlace = item(within(lee()).getByRole("list", { name: "Memorias que lee esta PC" }), "Mac personal");
-    expect(within(enlace).getByText("mac-personal").tagName).toBe("CODE");
-    expect(enlace.textContent).toMatch(/última lectura 2026-11-10 · vence 2026-12-02/);
+    const qtc = tarjeta("laptop-qtc");
+    expect(within(qtc).getByText("en los dos sentidos")).toBeTruthy();
+    expect(comparto_("laptop-qtc").textContent).toMatch(/Le compartís tu memoria.*Global.*\+ no validadas.*leyó 2026-11-09 · vence 2026-12-01/);
+    expect(within(leo_("laptop-qtc")).getByText("laptop-qtc").tagName).toBe("CODE");
+    expect(leo_("laptop-qtc").textContent).toMatch(/leíste 2026-11-10 · vence 2026-12-02/);
+
+    expect(within(tarjeta("desktop-casa")).getByText("solo le compartís")).toBeTruthy();
+    expect(comparto_("desktop-casa").textContent).toContain("sin alcance: todavía no ve nada");
+    expect(leo_("desktop-casa").className).toContain("vacio");
+    expect(within(tarjeta("mini-taller")).getByText("solo te comparte")).toBeTruthy();
+    expect(comparto_("mini-taller").textContent).toContain("No le compartís tu memoria");
+
+    const terminadas = within(seccion()).getByText("Conexiones terminadas", { exact: false }).closest("details")!;
+    expect(terminadas.open).toBe(false);
+    expect(terminadas.textContent).toMatch(/laptop-vieja · dejaste de compartirle el 2026-11-03/);
+    expect(screen.queryByRole("region", { name: "Registro" })).toBeNull();
   });
 
-  it("invitar con alcance manda remoto_codigo con los ámbitos marcados y muestra el código grande (AC-02)", async () => {
+  it("la actividad de cada conexión arranca plegada con el resumen de hoy y se pide al abrirla", async () => {
     const f = await montar();
-    fireEvent.click(within(leen()).getByRole("button", { name: "Invitar una PC" }));
-    const invitar = within(leen()).getByRole("group", { name: "Invitar una PC" });
-    fireEvent.click(await within(invitar).findByRole("checkbox", { name: /Global/ }));
-    fireEvent.click(within(invitar).getByRole("checkbox", { name: /agent-memory/ }));
-    expect(within(invitar).getByLabelText("40 entradas")).toBeTruthy();
-    fireEvent.click(within(invitar).getByRole("button", { name: "Generar código" }));
+    const actividad = tarjeta("laptop-qtc").querySelector("details.actividad") as HTMLDetailsElement;
+    expect(actividad.open).toBe(false);
+    expect(actividad.querySelector("summary")!.textContent).toBe("Actividadhoy: leyó 2 de las tuyas · leíste 3 de la suya · 1 rechazo");
+    expect(tarjeta("desktop-casa").querySelector("details.actividad summary")!.textContent).toBe("Actividadhoy, sin lecturas");
+    expect(ops(f.llamadas)).not.toContain("remoto_actividad");
 
+    actividad.open = true;
+    fireEvent(actividad, new window.Event("toggle"));
+    const leyo = await within(actividad).findByRole("list", { name: "Lo que leyó de tu memoria" });
+    expect(f.llamadas).toContainEqual(["remoto_actividad", { huella: "h-qtc", limite: 50 }]);
+    expect(within(leyo).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/buscar«release npm» → #179, #83$/),
+      expect.stringMatching(/rechazoleer #40: no_encontrada$/),
+    ]);
+    const lei = within(actividad).getByRole("list", { name: "Lo que leíste de la suya" });
+    expect(within(lei).getByRole("listitem").textContent).toMatch(/listar#355, #352$/);
+  });
+
+  it("«Conectar otra PC» ofrece los dos caminos: compartir con alcance genera el código", async () => {
+    const f = await montar();
+    fireEvent.click(within(seccion()).getByRole("button", { name: "+ Conectar otra PC" }));
+    const compartir = await screen.findByRole("group", { name: "Compartirle tu memoria" });
+    expect(screen.getByRole("form", { name: "Leer su memoria" })).toBeTruthy();
+    fireEvent.click(await within(compartir).findByRole("checkbox", { name: /Global/ }));
+    fireEvent.click(within(compartir).getByRole("checkbox", { name: /agent-memory/ }));
+    fireEvent.click(within(compartir).getByRole("button", { name: "Generar código" }));
     expect((await screen.findByLabelText("Código de enlace")).textContent).toBe("ABCD-EFGH-JKMN-PQRS");
-    expect(f.llamadas).toContainEqual(["remoto_codigo", { ambitos: [{ ambito: "global", ref: null }, { ambito: "proyecto", ref: "agent-memory" }], no_validadas: false }]);
-    expect(screen.getByRole("timer").textContent).toBe("Vence en 10:00");
-    const codigo = screen.getByRole("group", { name: "Código para enlazar" });
-    expect(codigo.textContent).toContain("En la otra PC: Acceso remoto → Pegar un código");
-    expect(within(codigo).getByText("agent-memory remote link ABCD-EFGH-JKMN-PQRS")).toBeTruthy();
-    expect(within(codigo).getByRole("button", { name: "Copiar" })).toBeTruthy();
+    expect(f.llamadas).toContainEqual([
+      "remoto_codigo",
+      { ambitos: [{ ambito: "global", ref: null }, { ambito: "proyecto", ref: "agent-memory" }], no_validadas: false },
+    ]);
+    expect(screen.getByText(/Acceso remoto → Conectar otra PC → Leer su memoria/)).toBeTruthy();
   });
 
-  it("pegar un código manda remoto_canjear sin pedir nombre y muestra con qué nombre e identificador quedó (AC-04)", async () => {
+  it("leer su memoria pega el código sin pedir nombre y la conexión suma ese sentido", async () => {
     const f = await montar();
-    fireEvent.click(within(lee()).getByRole("button", { name: "Pegar un código" }));
-    const form = within(lee()).getByRole("form", { name: "Pegar un código" });
-    expect(within(form).getAllByRole("textbox")).toHaveLength(1);
-    fireEvent.change(within(form).getByRole("textbox", { name: "Código de la otra PC" }), { target: { value: " WXYZ-1234 " } });
-    fireEvent.click(within(form).getByRole("button", { name: "Enlazar" }));
-    expect((await within(lee()).findByRole("status")).textContent).toBe("Ahora leés «Laptop trabajo» como «laptop-trabajo».");
+    fireEvent.click(within(leo_("desktop-casa")).getByRole("button", { name: "Pegar el código de desktop-casa" }));
+    const form = await screen.findByRole("form", { name: "Leer su memoria" });
+    fireEvent.change(within(form).getByLabelText("Código de la otra PC"), { target: { value: "USADO" } });
+    fireEvent.submit(form);
+    expect((await within(form).findByRole("alert")).textContent).toContain("ese código ya se usó");
+    fireEvent.change(within(form).getByLabelText("Código de la otra PC"), { target: { value: "WXYZ-1234" } });
+    fireEvent.submit(form);
+    expect((await within(form).findByRole("status")).textContent).toBe("Ahora leés «desktop-casa» como «desktop-casa».");
     expect(f.llamadas).toContainEqual(["remoto_canjear", { codigo: "WXYZ-1234" }]);
-    expect(within(lee()).queryByRole("form", { name: "Pegar un código" })).toBeNull();
-    expect(item(within(lee()).getByRole("list"), "Laptop trabajo").textContent).toContain("laptop-trabajo");
+    await waitFor(() => expect(within(tarjeta("desktop-casa")).getByText("en los dos sentidos")).toBeTruthy());
   });
 
-  it("el error del canje aparece junto al formulario y lo deja abierto", async () => {
-    await montar();
-    fireEvent.click(within(lee()).getByRole("button", { name: "Pegar un código" }));
-    fireEvent.change(within(lee()).getByRole("textbox", { name: "Código de la otra PC" }), { target: { value: "USADO" } });
-    fireEvent.click(within(lee()).getByRole("button", { name: "Enlazar" }));
-    expect((await within(lee()).findByRole("alert")).textContent).toBe("ese código ya se usó: pedí uno nuevo en la otra PC");
-    expect(within(lee()).getByRole("form", { name: "Pegar un código" })).toBeTruthy();
-  });
-
-  it("quitar un enlace pide confirmación antes de llamar al servicio (AC-07)", async () => {
+  it("dejar de compartir y dejar de leer piden confirmación antes de llamar al servicio", async () => {
     const f = await montar();
-    fireEvent.click(within(lee()).getByRole("button", { name: "Quitar mac-personal" }));
-    expect(ops(f.llamadas)).not.toContain("remoto_enlace_quitar");
-    const confirmar = within(lee()).getByRole("group", { name: "Quitar mac-personal" });
-    fireEvent.click(within(confirmar).getByRole("button", { name: "Cancelar" }));
-    expect(within(lee()).queryByRole("group", { name: "Quitar mac-personal" })).toBeNull();
-
-    fireEvent.click(within(lee()).getByRole("button", { name: "Quitar mac-personal" }));
-    fireEvent.click(within(within(lee()).getByRole("group", { name: "Quitar mac-personal" })).getByRole("button", { name: "Quitar mac-personal" }));
-    await within(lee()).findByText("Esta PC no lee ninguna otra memoria.");
-    expect(f.llamadas).toContainEqual(["remoto_enlace_quitar", { origen: "mac-personal" }]);
-  });
-
-  it("renombra el identificador de un enlace y valida su forma (AC-07)", async () => {
-    const f = await montar();
-    fireEvent.click(within(lee()).getByRole("button", { name: "Renombrar mac-personal" }));
-    const campo = within(lee()).getByRole("textbox", { name: "Identificador para los agentes" });
-    fireEvent.change(campo, { target: { value: "Mac Casa" } });
-    expect((within(lee()).getByRole("button", { name: "Guardar" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(campo, { target: { value: "mac-casa" } });
-    fireEvent.click(within(lee()).getByRole("button", { name: "Guardar" }));
-    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_enlace_renombrar", { origen: "mac-personal", nuevo: "mac-casa" }]));
-    expect(await within(lee()).findByText("mac-casa")).toBeTruthy();
-  });
-
-  it("revocar pide confirmación; las revocadas quedan agrupadas y plegadas al final (AC-08)", async () => {
-    const f = await montar();
-    const revocadas = within(leen()).getByText("Revocadas").closest("details") as HTMLDetailsElement;
-    expect(revocadas.open).toBe(false);
-    expect(within(revocadas).getByText("vieja")).toBeTruthy();
-
-    fireEvent.click(within(leen()).getByRole("button", { name: "Revocar casa" }));
+    fireEvent.click(within(comparto_("laptop-qtc")).getByRole("button", { name: "Dejar de compartirle a laptop-qtc" }));
     expect(ops(f.llamadas)).not.toContain("remoto_revocar");
-    fireEvent.click(within(within(leen()).getByRole("group", { name: "Revocar casa" })).getByRole("button", { name: "Revocar casa" }));
+    const confirmar = within(comparto_("laptop-qtc")).getByRole("group", { name: "Dejar de compartir" });
+    expect(confirmar.textContent).toContain("laptop-qtc deja de leer tu memoria en el acto");
+    fireEvent.click(within(confirmar).getByRole("button", { name: "Dejar de compartir" }));
     await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_revocar", { id: 1 }]));
-    await waitFor(() => expect(within(revocadas).getByText("casa")).toBeTruthy());
-    expect(within(within(leen()).getByRole("list", { name: "PCs que leen esta memoria" })).queryByText("casa")).toBeNull();
+    await waitFor(() => expect(comparto_("laptop-qtc").textContent).toContain("No le compartís tu memoria"));
+
+    fireEvent.click(within(leo_("mini-taller")).getByRole("button", { name: "Dejar de leer mini-taller" }));
+    expect(ops(f.llamadas)).not.toContain("remoto_enlace_quitar");
+    fireEvent.click(within(within(leo_("mini-taller")).getByRole("group", { name: "Dejar de leer" })).getByRole("button", { name: "Dejar de leer" }));
+    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_enlace_quitar", { origen: "mini-taller" }]));
+    // Sin ningún sentido activo, mini-taller pasa a «Conexiones terminadas».
+    await waitFor(() => expect(within(within(seccion()).getByRole("list", { name: "PCs conectadas" })).queryByText("mini-taller")).toBeNull());
   });
 
-  it("una PC sin alcance lo dice y lleva al editor de casillas, que manda remoto_alcance", async () => {
+  it("renombra el identificador que usan los agentes y valida su forma", async () => {
     const f = await montar();
-    const laptop = item(within(leen()).getByRole("list", { name: "PCs que leen esta memoria" }), "Laptop trabajo");
-    expect(within(laptop).getByText("sin alcance: no ve nada")).toBeTruthy();
-    fireEvent.click(within(laptop).getByRole("button", { name: "Elegir el alcance de Laptop trabajo" }));
-    const editor = within(laptop).getByRole("group", { name: "Editar alcance de Laptop trabajo" });
-    fireEvent.click(await within(editor).findByRole("checkbox", { name: /finanzas/ }));
-    fireEvent.click(within(editor).getByRole("checkbox", { name: "Incluir no validadas" }));
-    fireEvent.click(within(editor).getByRole("button", { name: "Guardar alcance" }));
-    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_alcance", { id: 2, ambitos: [{ ambito: "proyecto", ref: "finanzas" }], no_validadas: true }]));
-    await waitFor(() => expect(within(laptop).queryByText("sin alcance: no ve nada")).toBeNull());
-    expect(within(laptop).getByText("finanzas")).toBeTruthy();
+    fireEvent.click(within(leo_("laptop-qtc")).getByRole("button", { name: "Renombrar laptop-qtc" }));
+    const campo = within(leo_("laptop-qtc")).getByLabelText("Identificador para los agentes") as HTMLInputElement;
+    fireEvent.change(campo, { target: { value: "Con Espacios" } });
+    expect((within(leo_("laptop-qtc")).getByRole("button", { name: "Guardar" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(campo, { target: { value: "trabajo" } });
+    fireEvent.submit(campo.closest("form")!);
+    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_enlace_renombrar", { origen: "laptop-qtc", nuevo: "trabajo" }]));
   });
 
-  it("el editor de alcance arranca con lo que la PC ya ve marcado", async () => {
-    await montar();
-    const casa = item(within(leen()).getByRole("list", { name: "PCs que leen esta memoria" }), "casa");
-    fireEvent.click(within(casa).getByRole("button", { name: "Alcance de casa" }));
-    expect(((await within(casa).findByRole("checkbox", { name: /Global/ })) as HTMLInputElement).checked).toBe(true);
-    expect((within(casa).getByRole("checkbox", { name: /agent-memory/ }) as HTMLInputElement).checked).toBe(false);
+  it("una PC sin alcance lleva al editor de casillas, que manda remoto_alcance", async () => {
+    const f = await montar();
+    fireEvent.click(within(comparto_("desktop-casa")).getByRole("button", { name: "Qué ve desktop-casa" }));
+    const editor = await screen.findByRole("group", { name: "Editar qué ve desktop-casa" });
+    fireEvent.click(await within(editor).findByRole("checkbox", { name: /finanzas/ }));
+    fireEvent.click(within(editor).getByRole("button", { name: "Guardar" }));
+    await waitFor(() =>
+      expect(f.llamadas).toContainEqual(["remoto_alcance", { id: 2, ambitos: [{ ambito: "proyecto", ref: "finanzas" }], no_validadas: false }]),
+    );
+  });
+
+  it("con compartir apagado avisa y atenúa lo que compartís; leer sigue operativo", async () => {
+    const f = await montar();
+    fireEvent.click(screen.getByRole("switch", { name: "Compartir" }));
+    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_interruptor", { encendido: false }]));
+    expect((await within(seccion()).findByRole("note")).textContent).toContain("Compartir está apagado: ninguna PC puede leer tu memoria");
+    expect(comparto_("laptop-qtc").className).toContain("apagado");
+    expect((within(leo_("laptop-qtc")).getByRole("button", { name: "Dejar de leer laptop-qtc" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("los intentos de PCs desconocidas van en una línea aparte, con su detalle a pedido", async () => {
+    const f = await montar();
+    expect(within(seccion()).getByText(/Intentos de PCs desconocidas:/).textContent).toMatch(/2 hoy/);
+    fireEvent.click(within(seccion()).getByRole("button", { name: "Ver" }));
+    const lista = await within(seccion()).findByRole("list", { name: "Intentos de PCs desconocidas" });
+    expect(within(lista).getByRole("listitem").textContent).toContain("desconocido");
+    expect(f.llamadas).toContainEqual(["remoto_registro", { solo_desconocidas: true }]);
+  });
+
+  it("aceptar un pedido de código del panel abre «Conectar otra PC» con el código", async () => {
+    const f = await montar(clienteFalso({ pendientes: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar: código de enlace nuevo" }));
+    expect((await screen.findByLabelText("Código de enlace")).textContent).toBe("PANE-LCOD-IGO0-1234");
+    expect(screen.getByRole("timer").textContent).toBe("Vence en 5:00");
+    expect(f.llamadas).toContainEqual(["remoto_pendiente", { id: 13, aceptar: true }]);
   });
 
   it("sin relé ofrece URL y clave, manda remoto_rele y nunca vuelve a mostrar la clave (AC-09)", async () => {
@@ -289,36 +331,6 @@ describe("pantalla «Acceso remoto»", () => {
     await waitFor(() => expect(ops(f.llamadas).filter((o) => o === "remoto_rele_probar")).toHaveLength(2));
   });
 
-  it("con el acceso apagado atenúa «Leen esta memoria» y avisa; «Esta PC lee» sigue operativa (AC-11)", async () => {
-    const f = await montar();
-    expect(leen().className).not.toContain("apagada");
-    fireEvent.click(screen.getByRole("switch", { name: "Acceso" }));
-    await waitFor(() => expect(leen().className).toContain("apagada"));
-    expect(f.llamadas).toContainEqual(["remoto_interruptor", { encendido: false }]);
-    expect(within(leen()).getByRole("note").textContent).toContain("Acceso apagado: nadie puede leer");
-    expect((within(leen()).getByRole("button", { name: "Invitar una PC" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((within(lee()).getByRole("button", { name: "Pegar un código" }) as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.getByRole("switch", { name: "Acceso" }).getAttribute("aria-describedby")).toBeTruthy();
-    expect(screen.getByText("apagado")).toBeTruthy();
-  });
-
-  it("el registro arranca plegado con el resumen de hoy y se despliega con sus filtros (AC-15)", async () => {
-    const f = await montar();
-    const registro = screen.getByRole("region", { name: "Registro" });
-    const plegable = registro.querySelector("details")!;
-    expect(plegable.open).toBe(false);
-    await waitFor(() => expect(registro.querySelector(".resumen-hoy")!.textContent).toBe("hoy: 1 lectura · 1 rechazo"));
-
-    fireEvent.click(within(registro).getByText("Registro"));
-    expect(plegable.open).toBe(true);
-    const tabla = within(registro).getByRole("table", { name: "Registro remoto" });
-    expect(within(tabla).getByText('{"consulta":"deploy"}')).toBeTruthy();
-    expect(within(tabla).getByText("rechazo: operacion_no_permitida")).toBeTruthy();
-    fireEvent.click(within(registro).getByRole("checkbox", { name: "solo rechazos" }));
-    await waitFor(() => expect(within(within(registro).getByRole("table")).queryByText("7, 9")).toBeNull());
-    expect(f.llamadas).toContainEqual(["remoto_registro", { solo_rechazos: true }]);
-  });
-
   it("renombra esta PC en sitio y avisa cómo figura en el panel", async () => {
     const f = await montar();
     const barra = screen.getByRole("group", { name: "Esta PC" });
@@ -345,20 +357,6 @@ describe("pantalla «Acceso remoto»", () => {
     expect(items[2]).toMatch(/^código de enlace nuevo/);
   });
 
-  it("aceptar un pedido de código lo muestra en «Leen esta memoria»; rechazar los demás vacía la sección", async () => {
-    const f = await montar(clienteFalso({ pendientes: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Aceptar: código de enlace nuevo" }));
-    expect((await within(leen()).findByLabelText("Código de enlace")).textContent).toBe("PANE-LCOD-IGO0-1234");
-    expect(screen.getByRole("timer").textContent).toBe("Vence en 5:00");
-    expect(f.llamadas).toContainEqual(["remoto_pendiente", { id: 13, aceptar: true }]);
-
-    for (const id of [11, 12]) {
-      fireEvent.click(screen.getAllByRole("button", { name: /^Rechazar:/ })[0]!);
-      await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_pendiente", { id, aceptar: false }]));
-    }
-    await waitFor(() => expect(screen.queryByRole("list", { name: "Pedidos del panel" })).toBeNull());
-  });
-
   it("muestra el error del servicio sin inventar un estado", async () => {
     const cliente: Cliente = async () => {
       throw new ErrorApi("solo_persona", "«remoto_estado» lo hace la persona desde la web");
@@ -372,17 +370,10 @@ describe("pantalla «Acceso remoto»", () => {
     const viejo: Cliente = async <T,>(op: string): Promise<T> => {
       llamadas.push(op);
       if (op === "remoto_estado") return { interruptor: true, rele: { url: "wss://rele.ejemplo" }, codigo: null, dispositivos: [], enlaces: [{ origen: "casa", vence_en: "2026-12-01T00:00:00Z" }] } as T;
-      if (op === "remoto_registro") return { registro: [] } as T;
       throw new ErrorApi("desconocida", "operación desconocida");
     };
     render(<Remoto cliente={viejo} />);
     expect((await screen.findByRole("alert")).textContent).toContain("versión anterior");
-    // Sin nombre de la otra PC, el título es su identificador y se explica por qué.
-    const titulo = lee().querySelector(".item-nombre")!;
-    expect(titulo.tagName).toBe("CODE");
-    expect(titulo.textContent).toBe("casa");
-    expect(within(lee()).getByText("PC de una versión anterior: no comunica su nombre")).toBeTruthy();
-    expect(within(lee()).queryByText(/los agentes la consultan como/)).toBeNull();
     expect(llamadas).not.toContain("remoto_rele_probar");
   });
 });

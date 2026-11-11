@@ -144,6 +144,65 @@ export class Remoto {
       codigo: vigente ? { vence_en: vigente.venceEn, intentos_restantes: INTENTOS_CODIGO - vigente.intentos } : null,
       dispositivos: this.datos.dispositivos().map((d) => this.vistaDispositivo(d)),
       enlaces: this.datos.enlaces().map((e) => ({ origen: e.origen, nombre: e.nombre, enlazado_en: e.creadoEn, vence_en: e.venceEn, usado_en: e.usadoEn })),
+      ...this.conexiones(),
+    };
+  }
+
+  /**
+   * Una conexión por PC (0.4.1): quien lee esta memoria y la memoria que esta PC lee son la misma PC cuando comparten
+   * la clave estática, así que se unen por su huella. Cada conexión muestra los dos sentidos.
+   */
+  private conexiones() {
+    const hoy = this.datos.actividadHoy();
+    const porHuella = new Map<string, { huella: string; dispositivos: Dispositivo[]; enlace: Enlace | null }>();
+    const de = (huella: string) => {
+      let c = porHuella.get(huella);
+      if (!c) porHuella.set(huella, (c = { huella, dispositivos: [], enlace: null }));
+      return c;
+    };
+    for (const d of this.datos.dispositivos()) de(huellaDe(d.clavePublica)).dispositivos.push(d);
+    for (const e of this.datos.enlaces()) de(huellaDe(e.claveDuena)).enlace = e;
+    const conexiones = [...porHuella.values()].map(({ huella, dispositivos, enlace }) => {
+      // Si hubiera más de una fila de la misma PC, manda la vigente o, si no, la más reciente.
+      const d = dispositivos.find((x) => !x.revocadoEn) ?? dispositivos.at(-1) ?? null;
+      const ids = dispositivos.map((x) => x.id);
+      const suma = (m: Map<number, number>) => ids.reduce((n, id) => n + (m.get(id) ?? 0), 0);
+      return {
+        huella,
+        nombre: enlace?.nombre ?? d?.nombre ?? enlace?.origen ?? "PC",
+        comparto: d
+          ? {
+              id: d.id,
+              estado: this.datos.estadoDispositivo(d) ?? "vigente",
+              alcance: { ambitos: d.alcance.ambitos, no_validadas: d.alcance.noValidadas },
+              usado_en: d.usadoEn,
+              vence_en: d.venceEn,
+              revocado_en: d.revocadoEn,
+            }
+          : null,
+        leo: enlace ? { origen: enlace.origen, enlazado_en: enlace.creadoEn, usado_en: enlace.usadoEn, vence_en: enlace.venceEn } : null,
+        hoy: { leyo: suma(hoy.leyo), lei: hoy.lei.get(huella) ?? 0, rechazos: suma(hoy.rechazosDuena) + (hoy.rechazosLectora.get(huella) ?? 0) },
+      };
+    });
+    const activa = (c: (typeof conexiones)[number]) => Boolean(c.leo) || Boolean(c.comparto && c.comparto.estado !== "revocado");
+    conexiones.sort((a, b) => Number(activa(b)) - Number(activa(a)) || a.nombre.localeCompare(b.nombre));
+    return { conexiones, desconocidas_hoy: hoy.desconocidas };
+  }
+
+  /** Lo que una PC leyó de esta memoria y lo que esta PC leyó de la suya, más nuevo primero. */
+  actividad(huella: string, limite = 50) {
+    const ids = this.datos.dispositivos().filter((d) => huellaDe(d.clavePublica) === huella).map((d) => d.id);
+    const fila = (r: { fecha: string; herramienta: string; pedido: string | null; ids: number[]; resultado: "lectura" | "rechazo"; motivo: string | null }) => ({
+      fecha: r.fecha,
+      herramienta: r.herramienta,
+      pedido: r.pedido,
+      ids: r.ids,
+      resultado: r.resultado,
+      motivo: r.motivo,
+    });
+    return {
+      leyo: this.datos.registro({ dispositivoIds: ids, limite }).map(fila),
+      lei: this.datos.consultas(huella, limite).map(fila),
     };
   }
 
@@ -688,7 +747,7 @@ export class Remoto {
     const enlace = this.datos.enlace(origen);
     if (!enlace) throw new ReglaError("origen_desconocido", `no hay un enlace llamado «${origen}»`);
     const anterior = this.enCurso.get(origen) ?? Promise.resolve();
-    const actual = anterior.catch(() => undefined).then(() => this.pedirAhora(enlace, op, datos));
+    const actual = anterior.catch(() => undefined).then(() => this.pedirRegistrando(enlace, op, datos));
     this.enCurso.set(origen, actual);
     try {
       return await actual;
@@ -715,6 +774,20 @@ export class Remoto {
       resultados: respuestas.flatMap((r) => r.resultados),
       enlaces: respuestas.map(({ origen, estado, motivo }) => ({ origen, estado, motivo })),
     };
+  }
+
+  /** Pide y deja constancia local de la consulta (sin el contenido devuelto), para la actividad de la conexión. */
+  private async pedirRegistrando(enlace: Enlace, op: LecturaRemota, datos: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const base = { huella: huellaDe(enlace.claveDuena), origen: enlace.origen, herramienta: op, pedido: resumirConsulta(op, datos) };
+    try {
+      const r = await this.pedirAhora(enlace, op, datos);
+      this.datos.registrarConsulta({ ...base, ids: idsDeRespuesta(r), resultado: "lectura", motivo: null });
+      return r;
+    } catch (error) {
+      const motivo = error instanceof ErrorEnlace ? (error.motivo ?? error.estado) : error instanceof ReglaError ? error.codigo : "error";
+      this.datos.registrarConsulta({ ...base, ids: [], resultado: "rechazo", motivo });
+      throw error;
+    }
   }
 
   private async pedirAhora(enlace: Enlace, op: LecturaRemota, datos: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -832,4 +905,28 @@ function separarNombre(pedido: unknown): { nombre: string | null; resto: unknown
 
 export function validarOrigen(origen: string): void {
   if (!NOMBRE_ORIGEN.test(origen)) throw new ReglaError("origen_invalido", "el nombre del enlace va en minúsculas, números, - y _ (hasta 40)");
+}
+
+/**
+ * El pedido en una línea: solo el id pedido. El texto de una búsqueda no se guarda en la lectora (P9: la lectora no
+ * guarda nada que pueda coincidir con lo leído); la dueña sí lo registra en su lado.
+ */
+function resumirConsulta(op: LecturaRemota, datos: Record<string, unknown>): string | null {
+  if ((op === "leer" || op === "revisiones") && typeof datos.id === "number") return JSON.stringify({ id: datos.id });
+  return null;
+}
+
+/** Ids de entradas que trajo una respuesta, para la actividad (nunca su contenido). */
+function idsDeRespuesta(r: Record<string, unknown>): number[] {
+  const ids = new Set<number>();
+  const tomar = (x: unknown) => {
+    if (x && typeof x === "object" && typeof (x as { id?: unknown }).id === "number") ids.add((x as { id: number }).id);
+  };
+  for (const clave of ["resultados", "entradas"]) {
+    const lista = r[clave];
+    if (Array.isArray(lista)) lista.forEach(tomar);
+  }
+  tomar(r.entrada);
+  if (typeof r.id === "number") ids.add(r.id);
+  return [...ids].slice(0, 100);
 }
