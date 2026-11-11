@@ -94,26 +94,41 @@ Cloudflare's ranges and rate-limits by the real client IP.
 
 ### 2. Configure the relay on both machines
 
+In the web UI (`agent-memory open` → **Remote access**, *Acceso remoto*), enter the relay URL and key in the **This
+PC** bar. The key is written once and never shown again; the bar tells you whether the relay answers or rejects the
+key. From a terminal instead:
+
 ```sh
 agent-memory remote relay wss://<relay> < relay.key
 agent-memory remote status
 ```
+
+Give each PC a name in the same bar (it defaults to the hostname). The other PC and the relay dashboard show that
+name.
 
 If your network requires a proxy, set `HTTPS_PROXY`. The connection goes out through an HTTP `CONNECT` tunnel, with
 TLS inside it.
 
 ### 3. Pair
 
-1. On the machine that **owns** the memory, run `agent-memory remote code`. It opens the web UI on **Remote access**
-   (*Acceso remoto*). Turn access on and generate a code there. The code is valid for 10 minutes and allows 5 attempts.
-2. On the **reading** machine, run `agent-memory remote link <code> --nombre work`. The name is how agents refer to
-   that origin.
+1. On the machine that **owns** the memory, open **Remote access**, turn access on and choose **Invite a PC**
+   (*Invitar una PC*). Tick what the other PC will read (global, projects, repos, unvalidated entries) and generate a
+   code. The code is valid for 10 minutes and allows 5 attempts.
+2. On the **reading** machine, open **Remote access** → **Paste a code** (*Pegar un código*), or run
+   `agent-memory remote link <code>`.
 
-The reader gets a read-only credential valid for 30 days. The owner can renew it from the web UI.
+No names to type: each PC sends the name it has configured. The reader gets an identifier derived from the owner's
+name (`Work laptop` → `work-laptop`, `-2` if taken). That identifier is how agents refer to that origin; rename it
+from the web UI or pick it with `remote link <code> --nombre <id>`. If either PC renames itself, the other shows the
+new name after their next read.
+
+The reader gets a read-only credential valid for 30 days. The owner can renew it from the web UI. To stop reading a
+memory, use **Remove** in the web UI or `agent-memory remote unlink <id>`.
 
 ### What is shared, and how to revoke
 
-- A new link sees **nothing**. In the web UI the owner picks, per device:
+- A new link sees what the owner ticked when generating the code, or **nothing** if nothing was ticked. In the web UI
+  the owner can change it per device at any time:
   - which scopes it can read: global, specific projects, specific repos;
   - whether unvalidated entries are included.
 - Rejected, expired and superseded entries are never shared.
