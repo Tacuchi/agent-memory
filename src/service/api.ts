@@ -9,7 +9,7 @@ import { AMBITOS, ReglaError, TIPOS, VALIDACIONES, type Actor, type Ambito, type
 import type { Buscador } from "../search/search.js";
 import type { Filtros } from "../store/filters.js";
 import type { MemoryStore, Umbrales } from "../store/store.js";
-import type { Remoto } from "../remoto/remoto.js";
+import { validarOrigen, type Remoto } from "../remoto/remoto.js";
 import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "./views.js";
 
 // Operaciones de la memoria expuestas por el servicio. Las reglas viven una sola vez: aquí
@@ -84,7 +84,7 @@ const ESQUEMAS = {
   // Enlace remoto, gobierno de la dueña: solo la persona (SOLO_PERSONA).
   remoto_estado: z.object({}).strict(),
   remoto_interruptor: z.object({ encendido: z.boolean() }).strict(),
-  remoto_codigo: z.object({}).strict(),
+  remoto_codigo: z.object({ ambitos: z.array(ambitoAlcance).max(50).optional(), no_validadas: z.boolean().optional() }).strict(),
   remoto_revocar: z.object({ id }).strict(),
   remoto_renovar: z.object({ id }).strict(),
   remoto_alcance: z.object({ id, ambitos: z.array(ambitoAlcance).max(50), no_validadas: z.boolean() }).strict(),
@@ -92,10 +92,17 @@ const ESQUEMAS = {
   // Panel del relé (plan 007): nombre de esta PC y pedidos del panel que amplían el acceso (D01).
   remoto_nombre: z.object({ nombre: z.string().min(1).max(200) }).strict(),
   remoto_pendiente: z.object({ id, aceptar: z.boolean() }).strict(),
+  // Acceso remoto desde la web (plan 008): lo mismo que la CLI, sin escribir nombres, solo la persona.
+  remoto_canjear: z.object({ codigo: z.string().min(1).max(100) }).strict(),
+  remoto_enlace_quitar: z.object({ origen: z.string().min(1).max(40) }).strict(),
+  remoto_enlace_renombrar: z.object({ origen: z.string().min(1).max(40), nuevo: z.string().min(1).max(40) }).strict(),
+  remoto_rele: z.object({ url: z.string().min(1).max(500), clave: z.string().min(1).max(500) }).strict(),
+  remoto_rele_probar: z.object({}).strict(),
+  remoto_ambitos: z.object({}).strict(),
   // Enlace remoto desde la CLI (token): configurar el relé, canjear un código como lectora y ver el estado sin secretos.
   enlace_estado: z.object({}).strict(),
   enlace_rele: z.object({ url: z.string().min(1), clave: z.string().min(1) }).strict(),
-  enlace_canjear: z.object({ codigo: z.string().min(1).max(100), origen: z.string().min(1).max(40), dispositivo: z.string().min(1).max(80).optional() }).strict(),
+  enlace_canjear: z.object({ codigo: z.string().min(1).max(100), origen: z.string().min(1).max(40).optional(), dispositivo: z.string().min(1).max(80).optional() }).strict(),
   // Quitar un enlace propio solo restringe (deja de leer ese origen): lo puede pedir la CLI.
   enlace_quitar: z.object({ origen: z.string().min(1).max(40) }).strict(),
 } as const;
@@ -119,6 +126,12 @@ const SOLO_PERSONA: ReadonlySet<Operacion> = new Set([
   "remoto_registro",
   "remoto_nombre",
   "remoto_pendiente",
+  "remoto_canjear",
+  "remoto_enlace_quitar",
+  "remoto_enlace_renombrar",
+  "remoto_rele",
+  "remoto_rele_probar",
+  "remoto_ambitos",
 ]);
 
 export interface OpcionesApi {
@@ -350,10 +363,11 @@ export class Api {
     return this.enlace().estado();
   }
 
-  private remoto_codigo() {
+  private remoto_codigo(d: z.infer<typeof ESQUEMAS.remoto_codigo>) {
     const r = this.enlace();
     if (!r.datos.interruptor()) throw new ReglaError("acceso_apagado", "encendé el acceso remoto antes de generar un código");
-    return r.nuevoCodigo();
+    const conAlcance = d.ambitos !== undefined || d.no_validadas !== undefined;
+    return r.nuevoCodigo(conAlcance ? { ambitos: d.ambitos ?? [], noValidadas: Boolean(d.no_validadas) } : null);
   }
 
   private remoto_revocar(d: z.infer<typeof ESQUEMAS.remoto_revocar>) {
@@ -384,6 +398,43 @@ export class Api {
 
   private remoto_pendiente(d: z.infer<typeof ESQUEMAS.remoto_pendiente>) {
     return this.enlace().resolverPendiente(d.id, d.aceptar);
+  }
+
+  private remoto_canjear(d: z.infer<typeof ESQUEMAS.remoto_canjear>) {
+    return this.enlace().enlazar(d.codigo);
+  }
+
+  private remoto_enlace_quitar(d: z.infer<typeof ESQUEMAS.remoto_enlace_quitar>) {
+    return this.enlace_quitar(d);
+  }
+
+  private remoto_enlace_renombrar(d: z.infer<typeof ESQUEMAS.remoto_enlace_renombrar>) {
+    const r = this.enlace();
+    validarOrigen(d.nuevo);
+    const enlace = r.datos.renombrarEnlace(d.origen, d.nuevo);
+    r.informar();
+    return { origen: enlace.origen };
+  }
+
+  private remoto_rele(d: z.infer<typeof ESQUEMAS.remoto_rele>) {
+    return this.enlace_rele(d);
+  }
+
+  private remoto_rele_probar() {
+    return this.enlace().probarRele();
+  }
+
+  /** Global, proyectos y repos de esta memoria con cuántas entradas compartibles tiene cada uno (D04). */
+  private remoto_ambitos() {
+    const filas = this.store.db
+      .prepare(
+        `SELECT ambito, ambito_ref AS ref, COUNT(*) AS entradas FROM entradas
+         WHERE vida = 'activa' AND (validacion IS NULL OR validacion <> 'rechazada') GROUP BY ambito, ambito_ref`,
+      )
+      .all() as { ambito: "global" | "proyecto" | "repo"; ref: string | null; entradas: number }[];
+    const orden = { global: 0, proyecto: 1, repo: 2 } as const;
+    filas.sort((a, b) => orden[a.ambito] - orden[b.ambito] || (a.ref ?? "").localeCompare(b.ref ?? ""));
+    return { ambitos: filas.map((f) => ({ ambito: f.ambito, ref: f.ambito === "global" ? null : f.ref, entradas: Number(f.entradas) })) };
   }
 
   private remoto_registro(d: z.infer<typeof ESQUEMAS.remoto_registro>) {
@@ -433,6 +484,7 @@ export class Api {
     const r = this.enlace();
     if (!r.datos.quitarEnlace(d.origen)) throw new ReglaError("origen_desconocido", `no hay un enlace llamado «${d.origen}»`);
     r.reconciliar();
+    r.informar();
     return { quitado: d.origen };
   }
 

@@ -10,7 +10,6 @@
  *   vencer corta en el pedido siguiente, y una respuesta que no llega es `sin_respuesta`, nunca un vacío. Lo leído
  *   no se guarda en ningún lado (P9).
  */
-import { hostname } from "node:os";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { ESPERA_REMOTA_POR_DEFECTO_MS } from "../config.js";
@@ -144,7 +143,7 @@ export class Remoto {
       rele: rele ? { url: rele.url } : null,
       codigo: vigente ? { vence_en: vigente.venceEn, intentos_restantes: INTENTOS_CODIGO - vigente.intentos } : null,
       dispositivos: this.datos.dispositivos().map((d) => this.vistaDispositivo(d)),
-      enlaces: this.datos.enlaces().map((e) => ({ origen: e.origen, enlazado_en: e.creadoEn, vence_en: e.venceEn })),
+      enlaces: this.datos.enlaces().map((e) => ({ origen: e.origen, nombre: e.nombre, enlazado_en: e.creadoEn, vence_en: e.venceEn, usado_en: e.usadoEn })),
     };
   }
 
@@ -203,9 +202,9 @@ export class Remoto {
   }
 
   /** Código nuevo de 10 minutos y 5 intentos. El texto solo se devuelve aquí, una vez. */
-  nuevoCodigo(): { codigo: string; vence_en: string } {
+  nuevoCodigo(alcance: Alcance | null = null): { codigo: string; vence_en: string } {
     const c = generarCodigo();
-    const fila = this.datos.crearCodigo(c.buzon, c.huella);
+    const fila = this.datos.crearCodigo(c.buzon, c.huella, alcance);
     this.secretos.set(c.buzon, c.secreto);
     this.reconciliar();
     return { codigo: c.texto, vence_en: fila.venceEn };
@@ -224,6 +223,20 @@ export class Remoto {
     this.datos.fijarRele({ url: `${u.protocol}//${u.host}`, clave: clave.trim() });
     for (const buzon of [...this.escuchas.keys()]) this.dejarDeEscuchar(buzon);
     this.reconciliar();
+  }
+
+  /** ¿Responde el relé con esta clave? Un GET a su raíz: 204 con la clave buena, 401 con otra (plan 008, P3). */
+  async probarRele(): Promise<{ estado: "responde" | "clave_rechazada" | "no_responde" | "sin_rele" }> {
+    const rele = this.datos.rele();
+    if (!rele) return { estado: "sin_rele" };
+    const url = rele.url.replace(/^ws/, "http");
+    try {
+      const r = await fetch(`${url}/`, { headers: { authorization: `Bearer ${rele.clave}` }, signal: AbortSignal.timeout(5000) });
+      if (r.status === 401 || r.status === 403) return { estado: "clave_rechazada" };
+      return { estado: r.ok ? "responde" : "no_responde" };
+    } catch {
+      return { estado: "no_responde" };
+    }
   }
 
   // ── Dueña: escuchar el relé ──────────────────────────────────────────────────
@@ -467,7 +480,7 @@ export class Remoto {
       const id = codigoId;
       const resultado = transaction(this.store.db, () => {
         if (!this.datos.usarCodigo(id)) return null;
-        return this.datos.crearDispositivo(nombre, sesion.otro, randomBytes(16).toString("base64url"));
+        return this.datos.crearDispositivo(nombre, sesion.otro, randomBytes(16).toString("base64url"), this.datos.codigo(id)?.alcance ?? null);
       });
       if (!resultado) {
         this.rechazo(null, "enlazar", null, "codigo_usado");
@@ -475,7 +488,7 @@ export class Remoto {
       }
       this.secretos.delete(buzon);
       this.datos.registrar({ dispositivoId: resultado.id, dispositivo: resultado.nombre, herramienta: "enlazar", pedido: null, ids: [], resultado: "lectura", motivo: null });
-      sesion.enviar({ ok: true, enlace_id: resultado.id, buzon: resultado.buzon, vence_en: resultado.venceEn });
+      sesion.enviar({ ok: true, enlace_id: resultado.id, buzon: resultado.buzon, vence_en: resultado.venceEn, nombre: this.datos.nombrePc() });
       this.reconciliar();
     } catch (error) {
       if (error instanceof ReglaError) sesion.enviar({ ok: false, error: { codigo: error.codigo } });
@@ -513,7 +526,8 @@ export class Remoto {
     try {
       const pedido = await sesion.recibir(this.esperaMs * 5);
       const respuesta = await this.atenderPedido(dispositivo as unknown as Dispositivo, pedido);
-      sesion.enviar(respuesta);
+      // El nombre de esta PC viaja en cada respuesta para que la lectora lo mantenga al día (plan 008, P1).
+      sesion.enviar({ ...(respuesta as object), nombre: this.datos.nombrePc() });
       const ok = (respuesta as { ok?: unknown }).ok === true;
       this.datos.sumarUso(ok ? { recibidas: 1, bytes: Buffer.byteLength(JSON.stringify(respuesta)) } : { rechazos: 1 });
       this.informarPronto();
@@ -535,7 +549,10 @@ export class Remoto {
       this.rechazo(actual, herramientaDe(pedido), null, motivo);
       return { ok: false, error: { codigo: motivo } };
     }
-    const p = PEDIDO.safeParse(pedido);
+    // Una lectora ≥ 0.4 agrega su nombre al pedido (plan 008, P1): se toma y se valida el resto como siempre.
+    const { nombre, resto } = separarNombre(pedido);
+    if (nombre) this.datos.fijarNombreDispositivo(actual.id, nombre);
+    const p = PEDIDO.safeParse(resto);
     if (!p.success) {
       this.rechazo(actual, herramientaDe(pedido), resumirPedido(pedido), "operacion_no_permitida");
       return { ok: false, error: { codigo: "operacion_no_permitida" } };
@@ -597,10 +614,13 @@ export class Remoto {
 
   // ── Lectora ──────────────────────────────────────────────────────────────────
 
-  /** Canjea un código por una credencial de solo lectura y la guarda con el nombre de origen elegido. */
-  async enlazar(codigoTexto: string, origen: string, dispositivo = hostname()): Promise<{ origen: string; vence_en: string }> {
-    if (!NOMBRE_ORIGEN.test(origen)) throw new ReglaError("origen_invalido", "el nombre del enlace va en minúsculas, números, - y _ (hasta 40)");
-    if (this.datos.enlace(origen)) throw new ReglaError("origen_repetido", `ya hay un enlace llamado «${origen}»`);
+  /**
+   * Canjea un código por una credencial de solo lectura. Sin `origen`, el identificador sale del nombre que comunica
+   * la dueña (D01); la lectora se presenta con el nombre configurado de esta PC.
+   */
+  async enlazar(codigoTexto: string, origen?: string | null, dispositivo = this.datos.nombrePc()): Promise<{ origen: string; nombre: string | null; vence_en: string }> {
+    if (origen) validarOrigen(origen);
+    if (origen && this.datos.enlace(origen)) throw new ReglaError("origen_repetido", `ya hay un enlace llamado «${origen}»`);
     let codigo;
     try {
       codigo = leerCodigo(codigoTexto);
@@ -614,15 +634,24 @@ export class Remoto {
       t = await this.conectarLectora(rele, codigo.buzon, Date.now() + this.esperaMs * 5);
       const sesion = await abrirComoIniciador(t, { yo: this.identidad, secreto: codigo.secreto, esperaMs: this.esperaMs * 5 });
       sesion.enviar({ op: "enlazar", dispositivo: dispositivo.slice(0, 80) || "dispositivo" });
-      const r = (await sesion.recibir(this.esperaMs * 5)) as { ok?: boolean; enlace_id?: number; buzon?: string; vence_en?: string; error?: { codigo?: string } };
+      const r = (await sesion.recibir(this.esperaMs * 5)) as {
+        ok?: boolean;
+        enlace_id?: number;
+        buzon?: string;
+        vence_en?: string;
+        nombre?: unknown;
+        error?: { codigo?: string };
+      };
       sesion.cerrar();
       if (!r.ok || typeof r.buzon !== "string" || typeof r.vence_en !== "string" || typeof r.enlace_id !== "number") {
         const motivo = typeof r.error?.codigo === "string" && /^[a-z_]{1,40}$/.test(r.error.codigo) ? r.error.codigo : "rechazado";
         throw new ReglaError(motivo, `la dueña rechazó el código (${motivo})`);
       }
-      const enlace = this.datos.guardarEnlace({ origen, buzon: r.buzon, claveDuena: sesion.otro, enlaceId: r.enlace_id, venceEn: r.vence_en });
+      const nombre = nombreValido(r.nombre);
+      const elegido = origen ?? this.datos.origenLibre(nombre);
+      const enlace = this.datos.guardarEnlace({ origen: elegido, buzon: r.buzon, claveDuena: sesion.otro, enlaceId: r.enlace_id, venceEn: r.vence_en, nombre });
       this.reconciliar();
-      return { origen: enlace.origen, vence_en: enlace.venceEn };
+      return { origen: enlace.origen, nombre: enlace.nombre, vence_en: enlace.venceEn };
     } catch (error) {
       if (error instanceof ReglaError) throw error;
       if (error instanceof ErrorCanal && error.codigo === "rechazado") throw new ReglaError(error.motivo ?? "rechazado", `la dueña rechazó el código (${error.motivo ?? "rechazado"})`);
@@ -699,13 +728,16 @@ export class Remoto {
     const trabajo = (async () => {
       t = await this.conectarLectora(rele, enlace.buzon, Date.now() + this.esperaMs);
       const sesion = await abrirComoIniciador(t, { yo: this.identidad, otro: enlace.claveDuena, esperaMs: this.esperaMs });
-      sesion.enviar({ op, datos });
+      // Solo una dueña ≥ 0.4 (que ya dijo su nombre) acepta el campo `nombre` en el pedido (plan 008, P1).
+      sesion.enviar(enlace.nombre ? { op, datos, nombre: this.datos.nombrePc() } : { op, datos });
       const respuesta = await sesion.recibir(this.esperaMs);
       sesion.cerrar();
       return respuesta;
     })();
     try {
-      const r = (await Promise.race([trabajo, vencido])) as { ok?: unknown; datos?: unknown; error?: { codigo?: unknown } } | null;
+      const r = (await Promise.race([trabajo, vencido])) as { ok?: unknown; datos?: unknown; nombre?: unknown; error?: { codigo?: unknown } } | null;
+      const nombreDuena = nombreValido(r?.nombre);
+      if (nombreDuena) this.datos.fijarNombreEnlace(enlace.origen, nombreDuena);
       if (r && r.ok === true && typeof r.datos === "object" && r.datos !== null) {
         this.datos.sumarUso({ hechas: 1, bytes: Buffer.byteLength(JSON.stringify(r.datos)) });
         this.datos.marcarUsoEnlace(enlace.origen);
@@ -782,4 +814,22 @@ function resumirPedido(pedido: unknown): string | null {
 
 function limpiar<T extends Record<string, unknown>>(o: T): Record<string, unknown> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+}
+
+/** Nombre de PC que llega de la otra instalación: texto de 1 a 80 caracteres, o null. */
+function nombreValido(valor: unknown): string | null {
+  if (typeof valor !== "string") return null;
+  const limpio = valor.replace(/\s+/g, " ").trim().slice(0, 80);
+  return limpio || null;
+}
+
+/** Separa el `nombre` opcional de un pedido de lectura del resto, que se valida con el esquema estricto de siempre. */
+function separarNombre(pedido: unknown): { nombre: string | null; resto: unknown } {
+  if (!pedido || typeof pedido !== "object" || Array.isArray(pedido) || !("nombre" in pedido)) return { nombre: null, resto: pedido };
+  const { nombre, ...resto } = pedido as Record<string, unknown>;
+  return { nombre: nombreValido(nombre), resto };
+}
+
+export function validarOrigen(origen: string): void {
+  if (!NOMBRE_ORIGEN.test(origen)) throw new ReglaError("origen_invalido", "el nombre del enlace va en minúsculas, números, - y _ (hasta 40)");
 }

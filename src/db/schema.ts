@@ -158,6 +158,11 @@ const MIGRACIONES: readonly string[] = [
 
   ALTER TABLE remoto_enlaces ADD COLUMN usado_en TEXT;
   `,
+  // Acceso remoto desde la web (plan 008): el nombre de la PC dueña de cada enlace y el alcance que lleva un código.
+  `
+  ALTER TABLE remoto_enlaces ADD COLUMN nombre TEXT;
+  ALTER TABLE remoto_codigos ADD COLUMN alcance TEXT;
+  `,
 ];
 
 export const VERSION_ESQUEMA = MIGRACIONES.length;

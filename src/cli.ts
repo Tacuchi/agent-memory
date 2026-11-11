@@ -50,8 +50,9 @@ agentes:
 enlace remoto (solo lectura entre dos instalaciones, por un relé):
   remote code               abre la web en «Acceso remoto» para generar un código (lo hace la persona)
               [--imprimir]  solo muestra el enlace de un solo uso
-  remote link <código> --nombre <origen> [--dispositivo <nombre>]
-                            canjea un código de la otra instalación y la enlaza para leer
+  remote link <código> [--nombre <origen>] [--dispositivo <nombre>]
+                            canjea un código de la otra instalación y la enlaza para leer; sin --nombre, el
+                            identificador sale del nombre de la otra PC (también se hace desde la web)
   remote unlink <origen>    quita un enlace propio (deja de leer esa memoria); para volver a enlazar con el mismo nombre
   remote relay <url>        configura el relé (wss://…); la clave se lee por stdin
   remote status             estado del acceso remoto, dispositivos y enlaces, sin secretos
@@ -287,7 +288,7 @@ async function abrir(args: string[], ir?: "remoto"): Promise<number> {
 async function remote(args: string[]): Promise<number> {
   const [sub, ...resto] = args;
   if (sub === "code") return abrir(resto, "remoto");
-  if (sub !== "status" && sub !== "relay" && sub !== "link" && sub !== "unlink") return uso("uso: agent-memory remote code | link <código> --nombre <origen> | unlink <origen> | relay <url> | status");
+  if (sub !== "status" && sub !== "relay" && sub !== "link" && sub !== "unlink") return uso("uso: agent-memory remote code | link <código> [--nombre <origen>] | unlink <origen> | relay <url> | status");
   const { values, positionals } = parseArgs({ args: resto, allowPositionals: true, options: { nombre: { type: "string" }, dispositivo: { type: "string" } } });
   const config = cargarConfig();
   const arranque = await arrancarSeparado(config, ESPERA_START_MS);
@@ -314,13 +315,14 @@ async function remote(args: string[]): Promise<number> {
       const r = await cliente.llamar<{ rele: { url: string } }>("enlace_rele", { url: positionals[0], clave });
       return salida(`relé configurado: ${r.rele.url}`);
     }
-    if (positionals.length !== 1 || !values.nombre) return uso("uso: agent-memory remote link <código> --nombre <origen> [--dispositivo <nombre>]");
-    const r = await cliente.llamar<{ origen: string; vence_en: string }>("enlace_canjear", {
+    if (positionals.length !== 1) return uso("uso: agent-memory remote link <código> [--nombre <origen>] [--dispositivo <nombre>]");
+    const r = await cliente.llamar<{ origen: string; nombre: string | null; vence_en: string }>("enlace_canjear", {
       codigo: positionals[0],
-      origen: values.nombre,
+      ...(values.nombre ? { origen: values.nombre } : {}),
       ...(values.dispositivo ? { dispositivo: values.dispositivo } : {}),
     });
-    return salida(`enlace «${r.origen}» listo, de solo lectura; vence el ${r.vence_en.slice(0, 10)} (la dueña puede renovarlo)`);
+    const de = r.nombre ? ` con «${r.nombre}»` : "";
+    return salida(`enlace${de} listo, de solo lectura, como «${r.origen}»; vence el ${r.vence_en.slice(0, 10)} (la dueña puede renovarlo)`);
   } catch (error) {
     if (error instanceof ErrorServicio) {
       process.stderr.write(`${error.message}\n`);

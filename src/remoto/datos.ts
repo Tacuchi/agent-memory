@@ -34,6 +34,8 @@ export interface Enlace {
   venceEn: string;
   creadoEn: string;
   usadoEn: string | null;
+  /** Nombre configurado de la PC dueña; null si es de una versión que no lo comunica. */
+  nombre: string | null;
 }
 
 /** Uso de un día, sin contenido: lecturas recibidas (dueña), hechas (lectora), bytes por el relé y rechazos. */
@@ -74,6 +76,8 @@ export interface Codigo {
   intentos: number;
   usadoEn: string | null;
   creadoEn: string;
+  /** Alcance con que nace el dispositivo que canjee el código; null = sin alcance. */
+  alcance: Alcance | null;
 }
 
 export interface Rele {
@@ -151,12 +155,19 @@ export class DatosRemotos {
 
   // ── Códigos (dueña) ──────────────────────────────────────────────────────────
 
-  crearCodigo(buzon: string, huella: string): Codigo {
+  crearCodigo(buzon: string, huella: string, alcance: Alcance | null = null): Codigo {
+    if (alcance) validarAlcance(alcance);
     const ahora = this.reloj();
     const id = Number(
       this.db
-        .prepare("INSERT INTO remoto_codigos (buzon, huella, vence_en, creado_en) VALUES (?, ?, ?, ?)")
-        .run(buzon, huella, new Date(ahora.getTime() + VIDA_CODIGO_MS).toISOString(), ahora.toISOString()).lastInsertRowid,
+        .prepare("INSERT INTO remoto_codigos (buzon, huella, vence_en, creado_en, alcance) VALUES (?, ?, ?, ?, ?)")
+        .run(
+          buzon,
+          huella,
+          new Date(ahora.getTime() + VIDA_CODIGO_MS).toISOString(),
+          ahora.toISOString(),
+          alcance ? JSON.stringify({ ambitos: alcance.ambitos, no_validadas: alcance.noValidadas }) : null,
+        ).lastInsertRowid,
     );
     return this.codigo(id) as Codigo;
   }
@@ -196,27 +207,28 @@ export class DatosRemotos {
 
   // ── Dispositivos (dueña) ─────────────────────────────────────────────────────
 
-  crearDispositivo(nombre: string, clavePublica: string, buzon: string): Dispositivo {
+  crearDispositivo(nombre: string, clavePublica: string, buzon: string, alcance: Alcance | null = null): Dispositivo {
     const ahora = this.reloj();
+    const alcanceTexto = JSON.stringify({ ambitos: alcance?.ambitos ?? [], no_validadas: alcance?.noValidadas ?? false });
     const existente = this.db.prepare("SELECT id, revocado_en FROM remoto_dispositivos WHERE clave_publica = ?").get(clavePublica) as
       | { id: number; revocado_en: string | null }
       | undefined;
     if (existente && !existente.revocado_en) throw new ReglaError("ya_enlazado", "esa instalación ya está enlazada: revocala antes de volver a enlazarla");
     if (existente) {
-      // Una PC revocada que vuelve a enlazarse reusa su fila: credencial y buzón nuevos y alcance vacío, como un enlace
-      // nuevo (AC-06); el registro anterior queda asociado al mismo id.
+      // Una PC revocada que vuelve a enlazarse reusa su fila: credencial y buzón nuevos y el alcance del código nuevo
+      // (vacío si no trae), como un enlace nuevo; el registro anterior queda asociado al mismo id.
       this.db
         .prepare(
           `UPDATE remoto_dispositivos SET nombre = ?, buzon = ?, enlazado_en = ?, vence_en = ?, revocado_en = NULL, usado_en = NULL,
-             alcance = '{"ambitos":[],"no_validadas":false}' WHERE id = ?`,
+             alcance = ? WHERE id = ?`,
         )
-        .run(nombre, buzon, ahora.toISOString(), new Date(ahora.getTime() + VIDA_CREDENCIAL_MS).toISOString(), existente.id);
+        .run(nombre, buzon, ahora.toISOString(), new Date(ahora.getTime() + VIDA_CREDENCIAL_MS).toISOString(), alcanceTexto, existente.id);
       return this.dispositivo(existente.id);
     }
     const id = Number(
       this.db
-        .prepare("INSERT INTO remoto_dispositivos (nombre, clave_publica, buzon, enlazado_en, vence_en) VALUES (?, ?, ?, ?, ?)")
-        .run(nombre, clavePublica, buzon, ahora.toISOString(), new Date(ahora.getTime() + VIDA_CREDENCIAL_MS).toISOString()).lastInsertRowid,
+        .prepare("INSERT INTO remoto_dispositivos (nombre, clave_publica, buzon, enlazado_en, vence_en, alcance) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(nombre, clavePublica, buzon, ahora.toISOString(), new Date(ahora.getTime() + VIDA_CREDENCIAL_MS).toISOString(), alcanceTexto).lastInsertRowid,
     );
     return this.dispositivo(id);
   }
@@ -258,14 +270,16 @@ export class DatosRemotos {
 
   fijarAlcance(id: number, alcance: Alcance): Dispositivo {
     this.dispositivo(id);
-    for (const a of alcance.ambitos) {
-      if (!AMBITOS.includes(a.ambito)) throw new ReglaError("ambito_invalido", `ámbito desconocido: ${String(a.ambito)}`);
-      if ((a.ambito === "global") !== (a.ref === null)) throw new ReglaError("ambito_invalido", "global va sin referencia; proyecto y repo, con la suya");
-    }
+    validarAlcance(alcance);
     this.db
       .prepare("UPDATE remoto_dispositivos SET alcance = ? WHERE id = ?")
       .run(JSON.stringify({ ambitos: alcance.ambitos, no_validadas: alcance.noValidadas }), id);
     return this.dispositivo(id);
+  }
+
+  /** El nombre que la lectora comunica en sus pedidos; solo escribe si cambió. */
+  fijarNombreDispositivo(id: number, nombre: string): void {
+    this.db.prepare("UPDATE remoto_dispositivos SET nombre = ? WHERE id = ? AND nombre <> ?").run(nombre, id, nombre);
   }
 
   marcarUso(id: number): void {
@@ -277,8 +291,8 @@ export class DatosRemotos {
   guardarEnlace(e: Omit<Enlace, "id" | "creadoEn" | "usadoEn">): Enlace {
     if (this.enlace(e.origen)) throw new ReglaError("origen_repetido", `ya hay un enlace llamado «${e.origen}»`);
     this.db
-      .prepare("INSERT INTO remoto_enlaces (origen, buzon, clave_duena, enlace_id, vence_en, creado_en) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(e.origen, e.buzon, e.claveDuena, e.enlaceId, e.venceEn, this.ahora());
+      .prepare("INSERT INTO remoto_enlaces (origen, buzon, clave_duena, enlace_id, vence_en, creado_en, nombre) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(e.origen, e.buzon, e.claveDuena, e.enlaceId, e.venceEn, this.ahora(), e.nombre);
     return this.enlace(e.origen) as Enlace;
   }
 
@@ -293,6 +307,29 @@ export class DatosRemotos {
 
   marcarUsoEnlace(origen: string): void {
     this.db.prepare("UPDATE remoto_enlaces SET usado_en = ? WHERE origen = ?").run(this.ahora(), origen);
+  }
+
+  /** Identificador libre derivado del nombre de la dueña (D01): «Laptop trabajo» → laptop-trabajo, -2 si existe. */
+  origenLibre(nombre: string | null): string {
+    const base = slugOrigen(nombre);
+    if (!base) {
+      for (let n = 1; ; n++) if (!this.enlace(`pc-${n}`)) return `pc-${n}`;
+    }
+    if (!this.enlace(base)) return base;
+    for (let n = 2; ; n++) if (!this.enlace(`${base}-${n}`)) return `${base}-${n}`;
+  }
+
+  renombrarEnlace(origen: string, nuevo: string): Enlace {
+    if (!this.enlace(origen)) throw new ReglaError("origen_desconocido", `no hay un enlace llamado «${origen}»`);
+    if (origen === nuevo) return this.enlace(origen) as Enlace;
+    if (this.enlace(nuevo)) throw new ReglaError("origen_repetido", `ya hay un enlace llamado «${nuevo}»`);
+    this.db.prepare("UPDATE remoto_enlaces SET origen = ? WHERE origen = ?").run(nuevo, origen);
+    return this.enlace(nuevo) as Enlace;
+  }
+
+  /** El nombre que la dueña comunica en sus respuestas; solo escribe si cambió. */
+  fijarNombreEnlace(origen: string, nombre: string): void {
+    this.db.prepare("UPDATE remoto_enlaces SET nombre = ? WHERE origen = ? AND nombre IS NOT ?").run(nombre, origen, nombre);
   }
 
   /** Quita un enlace de la lectora (pedido del panel o de la persona): deja de leer ese origen. */
@@ -395,6 +432,7 @@ interface FilaCodigo {
   intentos: number;
   usado_en: string | null;
   creado_en: string;
+  alcance: string | null;
 }
 
 interface FilaDispositivo {
@@ -418,6 +456,7 @@ interface FilaEnlace {
   vence_en: string;
   creado_en: string;
   usado_en: string | null;
+  nombre: string | null;
 }
 
 interface FilaPendiente {
@@ -455,7 +494,40 @@ interface FilaRegistro {
 }
 
 function codigoDe(f: FilaCodigo): Codigo {
-  return { id: f.id, buzon: f.buzon, huella: f.huella, venceEn: f.vence_en, intentos: f.intentos, usadoEn: f.usado_en, creadoEn: f.creado_en };
+  const alcance = f.alcance ? (JSON.parse(f.alcance) as { ambitos: Alcance["ambitos"]; no_validadas: boolean }) : null;
+  return {
+    id: f.id,
+    buzon: f.buzon,
+    huella: f.huella,
+    venceEn: f.vence_en,
+    intentos: f.intentos,
+    usadoEn: f.usado_en,
+    creadoEn: f.creado_en,
+    alcance: alcance ? { ambitos: alcance.ambitos, noValidadas: Boolean(alcance.no_validadas) } : null,
+  };
+}
+
+function validarAlcance(alcance: Alcance): void {
+  for (const a of alcance.ambitos) {
+    if (!AMBITOS.includes(a.ambito)) throw new ReglaError("ambito_invalido", `ámbito desconocido: ${String(a.ambito)}`);
+    if ((a.ambito === "global") !== (a.ref === null)) throw new ReglaError("ambito_invalido", "global va sin referencia; proyecto y repo, con la suya");
+  }
+}
+
+/** Largo máximo de la base del identificador: deja lugar a un sufijo «-NN» dentro de los 40 de NOMBRE_ORIGEN. */
+const LARGO_BASE_ORIGEN = 36;
+
+/** «Laptop  Trabajo (Windows)» → «laptop-trabajo-windows»; "" si no queda nada utilizable. */
+export function slugOrigen(nombre: string | null): string {
+  if (!nombre) return "";
+  return nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, LARGO_BASE_ORIGEN)
+    .replace(/-+$/g, "");
 }
 
 function dispositivoDe(f: FilaDispositivo): Dispositivo {
@@ -483,5 +555,6 @@ function enlaceDe(f: FilaEnlace): Enlace {
     venceEn: f.vence_en,
     creadoEn: f.creado_en,
     usadoEn: f.usado_en ?? null,
+    nombre: f.nombre ?? null,
   };
 }

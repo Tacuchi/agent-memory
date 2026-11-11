@@ -68,8 +68,10 @@ export async function enlazar(duena: Instalacion, lectora: Instalacion, rele: Re
     if (r.status !== 200) throw new Error(`enlace_rele: ${JSON.stringify(r.datos)}`);
   }
   await duena.persona("remoto_interruptor", { encendido: true });
+  // La lectora se presenta con el nombre configurado de su PC, que también viaja en cada pedido (plan 008).
+  await lectora.persona("remoto_nombre", { nombre: "casa" });
   const { datos: codigo } = await duena.persona("remoto_codigo");
-  const r = await lectora.agente("enlace_canjear", { codigo: codigo.codigo, origen, dispositivo: "casa" });
+  const r = await lectora.agente("enlace_canjear", { codigo: codigo.codigo, origen });
   if (r.status !== 200) throw new Error(`enlace_canjear: ${JSON.stringify(r.datos)}`);
   const { datos } = await duena.persona("remoto_estado");
   return (datos.dispositivos as { id: number; nombre: string }[]).at(-1)?.id as number;
