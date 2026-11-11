@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
+import { hostname } from "node:os";
 import type { Database } from "../db/driver.js";
 import { AMBITOS, ReglaError } from "../domain/types.js";
 import type { Alcance } from "../store/filters.js";
 import { generarIdentidad, type IdentidadGuardada } from "./canal.js";
 
-// Tablas del enlace remoto (migración 3). Solo esta capa las toca.
+// Tablas del enlace remoto (migraciones 3 y 4). Solo esta capa las toca.
 
 export const VIDA_CODIGO_MS = 10 * 60_000;
 export const INTENTOS_CODIGO = 5;
@@ -31,7 +33,38 @@ export interface Enlace {
   enlaceId: number;
   venceEn: string;
   creadoEn: string;
+  usadoEn: string | null;
 }
+
+/** Uso de un día, sin contenido: lecturas recibidas (dueña), hechas (lectora), bytes por el relé y rechazos. */
+export interface UsoDia {
+  dia: string;
+  recibidas: number;
+  hechas: number;
+  bytes: number;
+  rechazos: number;
+}
+
+export type AccionPendiente = "renovar" | "alcance" | "codigo";
+
+/** Pedido del panel del relé que amplía el acceso: espera la decisión de la persona en la web local (D01). */
+export interface Pendiente {
+  id: number;
+  accion: AccionPendiente;
+  /** Huella de la lectora afectada (renovar, alcance); null para un código. */
+  objetivo: string | null;
+  datos: unknown;
+  creadoEn: string;
+  estado: "pendiente" | "aceptado" | "rechazado";
+  resueltoEn: string | null;
+}
+
+/** Huella pública de una instalación: SHA-256 de su clave estática, 22 caracteres base64url. */
+export function huellaDe(clavePublica: string): string {
+  return createHash("sha256").update(clavePublica).digest("base64url").slice(0, 22);
+}
+
+export const LARGO_NOMBRE_PC = 60;
 
 export interface Codigo {
   id: number;
@@ -93,6 +126,18 @@ export class DatosRemotos {
 
   fijarInterruptor(encendido: boolean): void {
     this.fijarAjuste("interruptor", encendido ? "1" : "0");
+  }
+
+  /** Nombre de esta PC en el panel del relé: el del equipo, salvo que la persona lo cambie. */
+  nombrePc(): string {
+    return this.ajuste("nombre_pc") ?? (hostname().slice(0, LARGO_NOMBRE_PC) || "pc");
+  }
+
+  fijarNombrePc(nombre: string): string {
+    const limpio = nombre.trim().replace(/\s+/g, " ");
+    if (!limpio || limpio.length > LARGO_NOMBRE_PC) throw new ReglaError("nombre_invalido", `el nombre de la PC va de 1 a ${LARGO_NOMBRE_PC} caracteres`);
+    this.fijarAjuste("nombre_pc", limpio);
+    return limpio;
   }
 
   rele(): Rele | null {
@@ -216,7 +261,7 @@ export class DatosRemotos {
 
   // ── Enlaces (lectora) ────────────────────────────────────────────────────────
 
-  guardarEnlace(e: Omit<Enlace, "id" | "creadoEn">): Enlace {
+  guardarEnlace(e: Omit<Enlace, "id" | "creadoEn" | "usadoEn">): Enlace {
     if (this.enlace(e.origen)) throw new ReglaError("origen_repetido", `ya hay un enlace llamado «${e.origen}»`);
     this.db
       .prepare("INSERT INTO remoto_enlaces (origen, buzon, clave_duena, enlace_id, vence_en, creado_en) VALUES (?, ?, ?, ?, ?, ?)")
@@ -231,6 +276,67 @@ export class DatosRemotos {
 
   enlaces(): Enlace[] {
     return (this.db.prepare("SELECT * FROM remoto_enlaces ORDER BY id").all() as unknown as FilaEnlace[]).map(enlaceDe);
+  }
+
+  marcarUsoEnlace(origen: string): void {
+    this.db.prepare("UPDATE remoto_enlaces SET usado_en = ? WHERE origen = ?").run(this.ahora(), origen);
+  }
+
+  /** Quita un enlace de la lectora (pedido del panel o de la persona): deja de leer ese origen. */
+  quitarEnlace(origen: string): boolean {
+    return this.db.prepare("DELETE FROM remoto_enlaces WHERE origen = ?").run(origen).changes === 1;
+  }
+
+  // ── Uso por día (dueña y lectora) ────────────────────────────────────────────
+
+  sumarUso(cambio: Partial<Omit<UsoDia, "dia">>): void {
+    const dia = this.ahora().slice(0, 10);
+    this.db
+      .prepare(
+        `INSERT INTO remoto_uso (dia, recibidas, hechas, bytes, rechazos) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(dia) DO UPDATE SET recibidas = recibidas + excluded.recibidas, hechas = hechas + excluded.hechas,
+           bytes = bytes + excluded.bytes, rechazos = rechazos + excluded.rechazos`,
+      )
+      .run(dia, cambio.recibidas ?? 0, cambio.hechas ?? 0, cambio.bytes ?? 0, cambio.rechazos ?? 0);
+  }
+
+  /** Los últimos `dias` días, del más viejo a hoy, con ceros donde no hubo uso. */
+  uso(dias = 7): UsoDia[] {
+    const hoy = this.reloj();
+    const lista: UsoDia[] = [];
+    for (let i = dias - 1; i >= 0; i--) {
+      const dia = new Date(hoy.getTime() - i * 86_400_000).toISOString().slice(0, 10);
+      const f = this.db.prepare("SELECT * FROM remoto_uso WHERE dia = ?").get(dia) as UsoDia | undefined;
+      lista.push({ dia, recibidas: f?.recibidas ?? 0, hechas: f?.hechas ?? 0, bytes: f?.bytes ?? 0, rechazos: f?.rechazos ?? 0 });
+    }
+    return lista;
+  }
+
+  // ── Pedidos del panel (dueña) ────────────────────────────────────────────────
+
+  crearPendiente(accion: AccionPendiente, objetivo: string | null, datos: unknown = null): Pendiente {
+    const id = Number(
+      this.db
+        .prepare("INSERT INTO remoto_pendientes (accion, objetivo, datos, creado_en) VALUES (?, ?, ?, ?)")
+        .run(accion, objetivo, datos === null ? null : JSON.stringify(datos), this.ahora()).lastInsertRowid,
+    );
+    return this.pendiente(id);
+  }
+
+  pendiente(id: number): Pendiente {
+    const f = this.db.prepare("SELECT * FROM remoto_pendientes WHERE id = ?").get(id) as FilaPendiente | undefined;
+    if (!f) throw new ReglaError("no_encontrado", `no existe el pedido ${id}`);
+    return pendienteDe(f);
+  }
+
+  pendientes(): Pendiente[] {
+    return (this.db.prepare("SELECT * FROM remoto_pendientes WHERE estado = 'pendiente' ORDER BY id").all() as unknown as FilaPendiente[]).map(pendienteDe);
+  }
+
+  resolverPendiente(id: number, estado: "aceptado" | "rechazado"): Pendiente {
+    if (this.pendiente(id).estado !== "pendiente") throw new ReglaError("ya_resuelto", "ese pedido ya se resolvió");
+    this.db.prepare("UPDATE remoto_pendientes SET estado = ?, resuelto_en = ? WHERE id = ?").run(estado, this.ahora(), id);
+    return this.pendiente(id);
   }
 
   // ── Registro (dueña) ─────────────────────────────────────────────────────────
@@ -298,6 +404,29 @@ interface FilaEnlace {
   enlace_id: number;
   vence_en: string;
   creado_en: string;
+  usado_en: string | null;
+}
+
+interface FilaPendiente {
+  id: number;
+  accion: AccionPendiente;
+  objetivo: string | null;
+  datos: string | null;
+  creado_en: string;
+  estado: Pendiente["estado"];
+  resuelto_en: string | null;
+}
+
+function pendienteDe(f: FilaPendiente): Pendiente {
+  return {
+    id: f.id,
+    accion: f.accion,
+    objetivo: f.objetivo,
+    datos: f.datos === null ? null : (JSON.parse(f.datos) as unknown),
+    creadoEn: f.creado_en,
+    estado: f.estado,
+    resueltoEn: f.resuelto_en,
+  };
 }
 
 interface FilaRegistro {
@@ -332,5 +461,14 @@ function dispositivoDe(f: FilaDispositivo): Dispositivo {
 }
 
 function enlaceDe(f: FilaEnlace): Enlace {
-  return { id: f.id, origen: f.origen, buzon: f.buzon, claveDuena: f.clave_duena, enlaceId: f.enlace_id, venceEn: f.vence_en, creadoEn: f.creado_en };
+  return {
+    id: f.id,
+    origen: f.origen,
+    buzon: f.buzon,
+    claveDuena: f.clave_duena,
+    enlaceId: f.enlace_id,
+    venceEn: f.vence_en,
+    creadoEn: f.creado_en,
+    usadoEn: f.usado_en ?? null,
+  };
 }

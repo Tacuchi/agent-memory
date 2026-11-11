@@ -15,7 +15,7 @@ const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
 export class ErrorRele extends Error {
   constructor(
-    readonly codigo: "clave_rele" | "buzon_ocupado" | "sin_conexion" | "proxy",
+    readonly codigo: "clave_rele" | "buzon_ocupado" | "sin_conexion" | "proxy" | "bloqueado",
     detalle: string,
   ) {
     super(detalle);
@@ -32,6 +32,20 @@ export interface OpcionesConexion {
   proxy?: string | null;
   env?: NodeJS.ProcessEnv;
   esperaMs?: number;
+  /** Huella de esta PC: el relé 0.3.0 atribuye la conexión a la PC para su panel. */
+  pc?: string;
+}
+
+/** Cabecera con la que una PC se presenta ante el relé (huella pública, nunca un secreto). */
+export const CABECERA_PC = "x-agent-memory-pc";
+export const HUELLA_PC = /^[A-Za-z0-9_-]{22}$/;
+
+/** Canal de control PC ↔ relé: mensajes JSON de texto (informe, órdenes, resultados). */
+export interface CanalControl {
+  enviar(mensaje: object): void;
+  alMensaje(fn: (mensaje: unknown) => void): void;
+  alCerrar(fn: () => void): void;
+  cerrar(): void;
 }
 
 export function proxyPara(destino: URL, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -54,31 +68,86 @@ export async function conectarRele(op: OpcionesConexion): Promise<Transporte> {
     throw new ErrorRele("sin_conexion", `la URL del relé debe empezar con wss:// (es ${base.protocol}//${base.hostname})`);
   }
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(op.buzon)) throw new ErrorRele("sin_conexion", "id de buzón inválido");
-  const destino = new URL(`/buzon/${op.buzon}`, base);
+  const ws = await abrirWs(base, `/buzon/${op.buzon}`, op);
+  // Se escucha desde antes del `open`: el relé puede entregar lo encolado en el mismo paquete que el upgrade.
+  const transporte = transporteDe(ws);
+  await esperarApertura(ws);
+  return transporte;
+}
+
+/** Abre el canal de control de esta PC con el relé (`/pc`). */
+export async function conectarControl(op: Omit<OpcionesConexion, "buzon"> & { pc: string }): Promise<CanalControl> {
+  const base = new URL(op.url);
+  if (base.protocol !== "wss:" && !(base.protocol === "ws:" && LOOPBACK.has(base.hostname))) {
+    throw new ErrorRele("sin_conexion", `la URL del relé debe empezar con wss:// (es ${base.protocol}//${base.hostname})`);
+  }
+  const ws = await abrirWs(base, "/pc", op);
+  const previos: unknown[] = [];
+  let receptor: ((m: unknown) => void) | null = null;
+  let cerrado = false;
+  const alCerrar: (() => void)[] = [];
+  ws.on("message", (datos, binario) => {
+    if (binario) return;
+    let mensaje: unknown;
+    try {
+      mensaje = JSON.parse(String(datos));
+    } catch {
+      return;
+    }
+    if (receptor) receptor(mensaje);
+    else if (previos.length < 16) previos.push(mensaje);
+  });
+  ws.on("close", () => {
+    cerrado = true;
+    for (const fn of alCerrar.splice(0)) fn();
+  });
+  ws.on("error", () => ws.terminate());
+  await esperarApertura(ws);
+  return {
+    enviar: (m) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
+    },
+    alMensaje: (fn) => {
+      receptor = fn;
+      for (const m of previos.splice(0)) fn(m);
+    },
+    alCerrar: (fn) => {
+      if (cerrado) fn();
+      else alCerrar.push(fn);
+    },
+    cerrar: () => ws.close(1000),
+  };
+}
+
+async function abrirWs(base: URL, ruta: string, op: Omit<OpcionesConexion, "buzon" | "url">): Promise<WebSocket> {
+  const destino = new URL(ruta, base);
   const proxy = op.proxy === undefined ? proxyPara(destino, op.env) : op.proxy;
   const espera = op.esperaMs ?? ESPERA_CONEXION_MS;
   const socket = proxy ? await tunel(proxy, destino, espera) : null;
-  const ws = new WebSocket(destino.toString(), {
-    headers: { authorization: `Bearer ${op.clave}` },
+  const headers: Record<string, string> = { authorization: `Bearer ${op.clave}` };
+  if (op.pc && HUELLA_PC.test(op.pc)) headers[CABECERA_PC] = op.pc;
+  return new WebSocket(destino.toString(), {
+    headers,
     maxPayload: TOPE_MENSAJE_POR_DEFECTO,
     handshakeTimeout: espera,
     perMessageDeflate: false,
     ...(socket ? { createConnection: () => socket } : {}),
   });
-  // Se escucha desde antes del `open`: el relé puede entregar lo encolado en el mismo paquete que el upgrade.
-  const transporte = transporteDe(ws);
-  await new Promise<void>((ok, mal) => {
+}
+
+function esperarApertura(ws: WebSocket): Promise<void> {
+  return new Promise<void>((ok, mal) => {
     ws.once("open", () => ok());
     ws.on("unexpected-response", (_req, res: IncomingMessage) => {
       const estado = res.statusCode ?? 0;
       ws.terminate();
       if (estado === 401) mal(new ErrorRele("clave_rele", "el relé rechazó la clave (401)"));
       else if (estado === 409) mal(new ErrorRele("buzon_ocupado", "el buzón ya tiene dos extremos"));
+      else if (estado === 403) mal(new ErrorRele("bloqueado", "el relé bloqueó esta PC o esta IP (403)"));
       else mal(new ErrorRele("sin_conexion", `el relé respondió ${estado}`));
     });
     ws.once("error", (error) => mal(new ErrorRele("sin_conexion", `no se pudo conectar al relé: ${error.message}`)));
   });
-  return transporte;
 }
 
 function transporteDe(ws: WebSocket): Transporte {

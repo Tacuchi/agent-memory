@@ -322,3 +322,17 @@ dialog.hoja-inferior::backdrop { background: rgb(5 6 8 / 0.6); }
   * { transition: none !important; }
   dialog.hoja-inferior { animation: none; }
 }
+
+/* Acceso remoto: nombre de la PC en el panel del relé y pedidos que esperan decisión. */
+.nombre-pc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 560px; }
+.nombre-pc label { color: var(--suave); font-size: 13px; }
+.nombre-pc input { flex: 1 1 220px; width: auto; }
+.pedidos-panel { list-style: none; margin: 0; padding: 0; border: 1px solid var(--costura); border-radius: 6px; max-width: 880px; }
+.pedidos-panel li {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 10px 12px; border-bottom: 1px solid var(--costura);
+}
+.pedidos-panel li:last-child { border-bottom: 0; }
+.pedidos-panel .chip { margin-right: 4px; font-family: var(--mono); }
+.pedido-fecha { color: var(--suave); font-size: 12px; }
+.pedido-acciones { display: inline-flex; gap: 6px; }

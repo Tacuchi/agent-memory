@@ -135,6 +135,29 @@ const MIGRACIONES: readonly string[] = [
   );
   CREATE INDEX remoto_registro_dispositivo ON remoto_registro(dispositivo_id, id);
   `,
+  // Panel del relé (plan 007): uso por día sin contenido, pedidos del panel que la persona acepta o rechaza, y el
+  // último uso de cada enlace de la lectora.
+  `
+  CREATE TABLE remoto_uso (
+    dia       TEXT PRIMARY KEY,
+    recibidas INTEGER NOT NULL DEFAULT 0,
+    hechas    INTEGER NOT NULL DEFAULT 0,
+    bytes     INTEGER NOT NULL DEFAULT 0,
+    rechazos  INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE TABLE remoto_pendientes (
+    id          INTEGER PRIMARY KEY,
+    accion      TEXT NOT NULL CHECK (accion IN ('renovar','alcance','codigo')),
+    objetivo    TEXT,
+    datos       TEXT,
+    creado_en   TEXT NOT NULL,
+    estado      TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente','aceptado','rechazado')),
+    resuelto_en TEXT
+  );
+
+  ALTER TABLE remoto_enlaces ADD COLUMN usado_en TEXT;
+  `,
 ];
 
 export const VERSION_ESQUEMA = MIGRACIONES.length;

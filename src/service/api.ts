@@ -89,6 +89,9 @@ const ESQUEMAS = {
   remoto_renovar: z.object({ id }).strict(),
   remoto_alcance: z.object({ id, ambitos: z.array(ambitoAlcance).max(50), no_validadas: z.boolean() }).strict(),
   remoto_registro: z.object({ dispositivo_id: id.optional(), solo_rechazos: z.boolean().optional(), limite: z.number().int().min(1).max(1000).optional() }).strict(),
+  // Panel del relé (plan 007): nombre de esta PC y pedidos del panel que amplían el acceso (D01).
+  remoto_nombre: z.object({ nombre: z.string().min(1).max(200) }).strict(),
+  remoto_pendiente: z.object({ id, aceptar: z.boolean() }).strict(),
   // Enlace remoto desde la CLI (token): configurar el relé, canjear un código como lectora y ver el estado sin secretos.
   enlace_estado: z.object({}).strict(),
   enlace_rele: z.object({ url: z.string().min(1), clave: z.string().min(1) }).strict(),
@@ -112,6 +115,8 @@ const SOLO_PERSONA: ReadonlySet<Operacion> = new Set([
   "remoto_renovar",
   "remoto_alcance",
   "remoto_registro",
+  "remoto_nombre",
+  "remoto_pendiente",
 ]);
 
 export interface OpcionesApi {
@@ -351,17 +356,32 @@ export class Api {
 
   private remoto_revocar(d: z.infer<typeof ESQUEMAS.remoto_revocar>) {
     const r = this.enlace();
-    return { dispositivo: r.vistaDispositivo(r.datos.revocar(d.id)) };
+    const dispositivo = r.vistaDispositivo(r.datos.revocar(d.id));
+    r.informar();
+    return { dispositivo };
   }
 
   private remoto_renovar(d: z.infer<typeof ESQUEMAS.remoto_renovar>) {
     const r = this.enlace();
-    return { dispositivo: r.vistaDispositivo(r.datos.renovar(d.id)) };
+    const dispositivo = r.vistaDispositivo(r.datos.renovar(d.id));
+    r.informar();
+    return { dispositivo };
   }
 
   private remoto_alcance(d: z.infer<typeof ESQUEMAS.remoto_alcance>) {
     const r = this.enlace();
-    return { dispositivo: r.vistaDispositivo(r.datos.fijarAlcance(d.id, { ambitos: d.ambitos, noValidadas: d.no_validadas })) };
+    const dispositivo = r.vistaDispositivo(r.datos.fijarAlcance(d.id, { ambitos: d.ambitos, noValidadas: d.no_validadas }));
+    r.informar();
+    return { dispositivo };
+  }
+
+  private remoto_nombre(d: z.infer<typeof ESQUEMAS.remoto_nombre>) {
+    this.enlace().fijarNombrePc(d.nombre);
+    return this.enlace().estado();
+  }
+
+  private remoto_pendiente(d: z.infer<typeof ESQUEMAS.remoto_pendiente>) {
+    return this.enlace().resolverPendiente(d.id, d.aceptar);
   }
 
   private remoto_registro(d: z.infer<typeof ESQUEMAS.remoto_registro>) {

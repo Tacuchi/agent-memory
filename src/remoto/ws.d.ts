@@ -41,6 +41,7 @@ declare module "ws" {
 
   class WebSocketServer extends EventEmitter {
     constructor(opciones: OpcionesServidor);
+    readonly clients: Set<WebSocket>;
     handleUpgrade(req: IncomingMessage, socket: Duplex, cabeza: Buffer, cb: (ws: WebSocket) => void): void;
     close(cb?: () => void): void;
   }

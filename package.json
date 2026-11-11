@@ -27,8 +27,8 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"for (const f of ['dist/bin.js', 'dist/cli.js']) require('node:fs').chmodSync(f, 0o755)\" && vite build --config web/vite.config.ts --logLevel warn",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json && node -e \"for (const f of ['dist/bin.js', 'dist/cli.js']) require('node:fs').chmodSync(f, 0o755)\" && vite build --config web/vite.config.ts --logLevel warn && vite build --config web/panel/vite.config.ts --logLevel warn",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit && tsc -p web/panel/tsconfig.json --noEmit",
     "test": "vitest run",
     "model:measure": "tsc -p tsconfig.build.json && node --disable-warning=ExperimentalWarning dist/medir-modelos.js",
     "model:fetch": "tsc -p tsconfig.build.json && node dist/cli.js model fetch",

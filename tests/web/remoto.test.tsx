@@ -13,6 +13,20 @@ function clienteFalso() {
   const llamadas: [string, object][] = [];
   const estado = {
     interruptor: false,
+    nombre_pc: "mac-de-prueba",
+    panel: "conectado" as "conectado" | "conectando" | "inactivo",
+    pendientes: [
+      { id: 11, accion: "renovar", dispositivo: { id: 1, nombre: "casa" }, datos: null, creado_en: "2026-11-10T11:50:00.000Z", estado: "pendiente" },
+      {
+        id: 12,
+        accion: "alcance",
+        dispositivo: { id: 1, nombre: "casa" },
+        datos: { ambitos: ["global", "proyecto:agent-memory", "repo:github.com/ejemplo/repo"], pendientes: true },
+        creado_en: "2026-11-10T11:51:00.000Z",
+        estado: "pendiente",
+      },
+      { id: 13, accion: "codigo", dispositivo: null, datos: null, creado_en: "2026-11-10T11:52:00.000Z", estado: "pendiente" },
+    ] as any[],
     rele: { url: "wss://rele.ejemplo" },
     codigo: null as null | { vence_en: string; intentos_restantes: number },
     dispositivos: [] as any[],
@@ -56,6 +70,17 @@ function clienteFalso() {
         return { dispositivo: estado.dispositivos[0] } as T;
       case "remoto_renovar":
         return { dispositivo: estado.dispositivos[0] } as T;
+      case "remoto_nombre":
+        estado.nombre_pc = c.nombre;
+        return structuredClone(estado) as T;
+      case "remoto_pendiente": {
+        const p = estado.pendientes.find((x) => x.id === c.id);
+        estado.pendientes = estado.pendientes.filter((x) => x.id !== c.id);
+        const resuelto = { ...p, estado: c.aceptar ? "aceptado" : "rechazado" };
+        return (c.aceptar && p.accion === "codigo"
+          ? { pendiente: resuelto, codigo: { codigo: "PANE-LCOD-IGO0-1234", vence_en: new Date(AHORA + 300_000).toISOString() } }
+          : { pendiente: resuelto }) as T;
+      }
       case "remoto_registro":
         return { registro: registro.filter((r) => (!c.solo_rechazos || r.resultado === "rechazo") && (c.dispositivo_id === undefined || r.dispositivo_id === c.dispositivo_id)) } as T;
       default:
@@ -135,5 +160,57 @@ describe("pantalla «Acceso remoto»", () => {
     };
     render(<Remoto cliente={cliente} />);
     expect((await screen.findByRole("alert")).textContent).toMatch(/lo hace la persona/);
+  });
+
+  it("renombra la PC y muestra cómo figura en el panel del relé y su conexión", async () => {
+    const f = clienteFalso();
+    render(<Remoto cliente={f.cliente} ahora={() => AHORA} />);
+    expect(await screen.findByText(/figura como «mac-de-prueba»\. Conexión con el panel: conectada\./)).toBeTruthy();
+    const campo = screen.getByRole("textbox", { name: "Nombre de esta PC" });
+    const guardar = screen.getByRole("button", { name: "Guardar" }) as HTMLButtonElement;
+    expect(guardar.disabled).toBe(true);
+    fireEvent.change(campo, { target: { value: "  Mac personal " } });
+    fireEvent.submit(campo.closest("form")!);
+    await screen.findByText(/figura como «Mac personal»/);
+    expect(f.llamadas).toContainEqual(["remoto_nombre", { nombre: "Mac personal" }]);
+    expect(screen.getByRole("status").textContent).toBe("Nombre guardado: el panel del relé muestra «Mac personal»");
+  });
+
+  it("lista los pedidos del panel en castellano llano", async () => {
+    render(<Remoto cliente={clienteFalso().cliente} ahora={() => AHORA} />);
+    const lista = await screen.findByRole("list", { name: "Pedidos del panel" });
+    const items = within(lista).getAllByRole("listitem").map((li) => li.textContent);
+    expect(items[0]).toMatch(/^renovar casa 30 días/);
+    expect(items[1]).toMatch(/^Cambiar el alcance de casa a globalagent-memoryrepo:github\.com\/ejemplo\/repo\+ no validadas/);
+    expect(items[2]).toMatch(/^código de enlace nuevo/);
+  });
+
+  it("aceptar un renovar y rechazar un alcance llaman a remoto_pendiente y los sacan de la lista", async () => {
+    const f = clienteFalso();
+    render(<Remoto cliente={f.cliente} ahora={() => AHORA} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Aceptar: renovar casa 30 días" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Aceptar: renovar casa 30 días" })).toBeNull());
+    expect(f.llamadas).toContainEqual(["remoto_pendiente", { id: 11, aceptar: true }]);
+    expect(screen.getByRole("status").textContent).toBe("Aceptado: renovar casa 30 días");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Rechazar: cambiar el alcance de casa a global, agent-memory/ }));
+    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_pendiente", { id: 12, aceptar: false }]));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /alcance de casa/ })).toBeNull());
+    expect(screen.queryByLabelText("Código de enlace")).toBeNull();
+  });
+
+  it("aceptar un pedido de código muestra el código aquí, con su vencimiento; sin pedidos lo dice", async () => {
+    const f = clienteFalso();
+    render(<Remoto cliente={f.cliente} ahora={() => AHORA} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Aceptar: código de enlace nuevo" }));
+    expect((await screen.findByLabelText("Código de enlace")).textContent).toBe("PANE-LCOD-IGO0-1234");
+    expect(screen.getByRole("timer").textContent).toBe("Vence en 5:00");
+    expect(f.llamadas).toContainEqual(["remoto_pendiente", { id: 13, aceptar: true }]);
+
+    for (const id of [11, 12]) {
+      fireEvent.click(screen.getAllByRole("button", { name: /^Rechazar/ })[0]!);
+      await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_pendiente", { id, aceptar: false }]));
+    }
+    expect(await screen.findByText("No hay pedidos del panel.")).toBeTruthy();
   });
 });

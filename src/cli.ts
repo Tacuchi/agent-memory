@@ -217,8 +217,15 @@ async function relay(args: string[]): Promise<number> {
   if (!["127.0.0.1", "::1", "localhost"].includes(host)) {
     process.stderr.write(`aviso: el relé sirve HTTP sin TLS en ${host}; publicalo detrás de HTTPS, nunca directo a internet\n`);
   }
-  const rele = await crearRele({ clave, puerto, host });
+  const equipo = process.env.AGENT_MEMORY_RELAY_ACCESS_TEAM?.trim();
+  const aud = process.env.AGENT_MEMORY_RELAY_ACCESS_AUD?.trim();
+  if (Boolean(equipo) !== Boolean(aud)) {
+    process.stderr.write("el panel necesita las dos variables: AGENT_MEMORY_RELAY_ACCESS_TEAM y AGENT_MEMORY_RELAY_ACCESS_AUD\n");
+    return 1;
+  }
+  const rele = await crearRele({ clave, puerto, host, ...(equipo && aud ? { acceso: { equipo, aud } } : {}) });
   process.stderr.write(`agent-memory relay ${version()} escuchando en ${rele.url.replace(/^ws/, "http")}\n`);
+  process.stderr.write(equipo ? `panel en /dashboard detrás de Cloudflare Access (equipo ${equipo})\n` : "panel apagado: faltan AGENT_MEMORY_RELAY_ACCESS_TEAM y AGENT_MEMORY_RELAY_ACCESS_AUD\n");
   await new Promise<void>((resolve) => {
     process.once("SIGINT", () => resolve());
     process.once("SIGTERM", () => resolve());

@@ -23,11 +23,16 @@ import { desdeFila, type FilaEntrada } from "../store/rows.js";
 import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "../service/views.js";
 import { abrirComoIniciador, abrirComoRespondedor, cargarIdentidad, ErrorCanal, type Identidad, type MotivoRechazo, type Transporte } from "./canal.js";
 import { generarCodigo, leerCodigo } from "./codigo.js";
-import { DatosRemotos, INTENTOS_CODIGO, type Dispositivo, type Enlace } from "./datos.js";
-import { conectarRele, ErrorRele } from "./transporte.js";
+import { DatosRemotos, huellaDe, INTENTOS_CODIGO, type Dispositivo, type Enlace, type Pendiente } from "./datos.js";
+import { conectarControl, conectarRele, ErrorRele, type CanalControl } from "./transporte.js";
+import { version } from "../version.js";
 
 const ESCUCHA_SIN_PLAZO_MS = 24 * 3600_000;
 const REVISAR_ESCUCHAS_MS = 60_000;
+/** Cada cuánto la PC repite su informe al relé (además de al conectar y ante un cambio). */
+export const INFORME_CADA_MS = 30_000;
+const ORDEN = z.object({ tipo: z.literal("orden"), id: z.string().min(1).max(40), accion: z.string().max(40), objetivo: z.string().max(200).nullable().optional(), datos: z.unknown().optional() }).passthrough();
+const ALCANCE_PANEL = z.object({ ambitos: z.array(z.string().min(1).max(200)).max(50), pendientes: z.boolean() }).strict();
 export const LECTURAS_REMOTAS = ["buscar", "leer", "listar", "revisiones"] as const;
 export type LecturaRemota = (typeof LECTURAS_REMOTAS)[number];
 export type EstadoEnlace = "ok" | "sin_respuesta" | "rechazado" | "version_incompatible";
@@ -94,6 +99,10 @@ export class Remoto {
   private readonly enCurso = new Map<string, Promise<unknown>>();
   private readonly revision: NodeJS.Timeout;
   private cerrado = false;
+  /** Huella pública de esta PC ante el relé. */
+  readonly huella: string;
+  private control: { activa: boolean; canal: CanalControl | null } | null = null;
+  private informeProgramado: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly store: MemoryStore,
@@ -102,6 +111,7 @@ export class Remoto {
   ) {
     this.datos = new DatosRemotos(store.db, () => store.ahora());
     this.identidad = cargarIdentidad(this.datos.identidad());
+    this.huella = huellaDe(this.identidad.publica);
     this.esperaMs = opciones.esperaMs ?? ESPERA_REMOTA_POR_DEFECTO_MS;
     this.env = opciones.env ?? process.env;
     this.revision = setInterval(() => this.reconciliar(), REVISAR_ESCUCHAS_MS);
@@ -112,6 +122,8 @@ export class Remoto {
     this.cerrado = true;
     clearInterval(this.revision);
     for (const buzon of [...this.escuchas.keys()]) this.dejarDeEscuchar(buzon);
+    this.dejarControl();
+    if (this.informeProgramado) clearTimeout(this.informeProgramado);
   }
 
   /** Buzones que la dueña escucha ahora (para diagnóstico y pruebas). */
@@ -126,11 +138,49 @@ export class Remoto {
     const vigente = this.datos.codigoVigente();
     return {
       interruptor: this.datos.interruptor(),
+      nombre_pc: this.datos.nombrePc(),
+      panel: this.control?.canal ? "conectado" : this.control ? "conectando" : "inactivo",
+      pendientes: this.datos.pendientes().map((p) => this.vistaPendiente(p)),
       rele: rele ? { url: rele.url } : null,
       codigo: vigente ? { vence_en: vigente.venceEn, intentos_restantes: INTENTOS_CODIGO - vigente.intentos } : null,
       dispositivos: this.datos.dispositivos().map((d) => this.vistaDispositivo(d)),
       enlaces: this.datos.enlaces().map((e) => ({ origen: e.origen, enlazado_en: e.creadoEn, vence_en: e.venceEn })),
     };
+  }
+
+  vistaPendiente(p: Pendiente) {
+    const lectora = p.objetivo ? this.datos.dispositivos().find((d) => huellaDe(d.clavePublica) === p.objetivo) : undefined;
+    return { id: p.id, accion: p.accion, dispositivo: lectora ? { id: lectora.id, nombre: lectora.nombre } : null, datos: p.datos, creado_en: p.creadoEn, estado: p.estado };
+  }
+
+  fijarNombrePc(nombre: string): string {
+    const r = this.datos.fijarNombrePc(nombre);
+    this.informar();
+    return r;
+  }
+
+  /**
+   * La persona acepta o rechaza un pedido del panel (D01). Aceptar aplica el cambio aquí, en la PC dueña; un código
+   * aceptado se devuelve solo a la web local, nunca al relé (D04).
+   */
+  resolverPendiente(id: number, aceptar: boolean): { pendiente: ReturnType<Remoto["vistaPendiente"]>; codigo?: { codigo: string; vence_en: string } } {
+    const p = this.datos.pendiente(id);
+    if (p.estado !== "pendiente") throw new ReglaError("ya_resuelto", "ese pedido ya se resolvió");
+    let codigo: { codigo: string; vence_en: string } | undefined;
+    if (aceptar) {
+      if (p.accion === "codigo") {
+        if (!this.datos.interruptor()) throw new ReglaError("acceso_apagado", "encendé el acceso remoto antes de generar un código");
+        codigo = this.nuevoCodigo();
+      } else {
+        const d = this.datos.dispositivos().find((x) => huellaDe(x.clavePublica) === p.objetivo);
+        if (!d) throw new ReglaError("no_encontrado", "esa PC ya no está enlazada");
+        if (p.accion === "renovar") this.datos.renovar(d.id);
+        else this.datos.fijarAlcance(d.id, alcanceDesdePanel(p.datos));
+      }
+    }
+    const resuelto = this.datos.resolverPendiente(id, aceptar ? "aceptado" : "rechazado");
+    this.informar();
+    return { pendiente: this.vistaPendiente(resuelto), ...(codigo ? { codigo } : {}) };
   }
 
   vistaDispositivo(d: Dispositivo) {
@@ -149,6 +199,7 @@ export class Remoto {
   fijarInterruptor(encendido: boolean): void {
     this.datos.fijarInterruptor(encendido);
     this.reconciliar();
+    this.informar();
   }
 
   /** Código nuevo de 10 minutos y 5 intentos. El texto solo se devuelve aquí, una vez. */
@@ -187,6 +238,145 @@ export class Remoto {
     }
     for (const buzon of [...this.escuchas.keys()]) if (!deseados.has(buzon)) this.dejarDeEscuchar(buzon);
     for (const [buzon, tipo] of deseados) if (!this.escuchas.has(buzon)) this.escuchar(buzon, tipo);
+    // El canal de control con el panel: con relé y algo que informar (acceso encendido o enlaces).
+    const quiereControl = Boolean(this.datos.rele()) && (this.datos.interruptor() || this.datos.enlaces().length > 0);
+    if (quiereControl && !this.control) this.abrirControl();
+    if (!quiereControl && this.control) this.dejarControl();
+    this.informar();
+  }
+
+  // ── Panel del relé: informe y órdenes (plan 007) ─────────────────────────────
+
+  /** Metadatos para el panel: nunca contenido de la memoria ni el texto de un código (D04). */
+  informe() {
+    const vigente = this.datos.codigoVigente();
+    return {
+      tipo: "informe" as const,
+      nombre: this.datos.nombrePc(),
+      version: version(),
+      acceso: this.datos.interruptor(),
+      leen: this.datos.dispositivos().map((d) => ({
+        huella: huellaDe(d.clavePublica),
+        nombre: d.nombre,
+        alcance: { ambitos: d.alcance.ambitos.map(textoAmbito), pendientes: d.alcance.noValidadas },
+        vence: d.venceEn,
+        usado: d.usadoEn,
+        revocado: Boolean(d.revocadoEn),
+      })),
+      lee: this.datos.enlaces().map((e) => ({ origen: e.origen, duena: huellaDe(e.claveDuena), vence: e.venceEn, usado: e.usadoEn })),
+      codigo: vigente ? { vence: vigente.venceEn } : null,
+      uso: this.datos.uso(7),
+      pendientes: this.datos.pendientes().map((p) => ({ id: p.id, accion: p.accion, objetivo: p.objetivo, creado: p.creadoEn })),
+    };
+  }
+
+  /** Manda el informe ahora si el canal está abierto; si no, sale al conectar. */
+  informar(): void {
+    this.control?.canal?.enviar(this.informe());
+  }
+
+  /** Tras un cambio de uso: un solo informe en el próximo segundo, aunque haya muchas lecturas seguidas. */
+  private informarPronto(): void {
+    if (this.informeProgramado || !this.control?.canal) return;
+    this.informeProgramado = setTimeout(() => {
+      this.informeProgramado = null;
+      this.informar();
+    }, 1000);
+    this.informeProgramado.unref();
+  }
+
+  private abrirControl(): void {
+    const control: { activa: boolean; canal: CanalControl | null } = { activa: true, canal: null };
+    this.control = control;
+    void (async () => {
+      let pausa = 250;
+      while (control.activa && !this.cerrado) {
+        const rele = this.datos.rele();
+        if (!rele) break;
+        let reloj: NodeJS.Timeout | undefined;
+        try {
+          const canal = await conectarControl({ url: rele.url, clave: rele.clave, pc: this.huella, env: this.env });
+          if (!control.activa) {
+            canal.cerrar();
+            break;
+          }
+          control.canal = canal;
+          pausa = 250;
+          const cerrado = new Promise<void>((ok) => canal.alCerrar(ok));
+          canal.alMensaje((m) => void this.atenderOrden(canal, m));
+          canal.enviar(this.informe());
+          reloj = setInterval(() => canal.enviar(this.informe()), INFORME_CADA_MS);
+          reloj.unref();
+          await cerrado;
+        } catch {
+          // relé caído, bloqueado o sin red: se reintenta con espera creciente
+        } finally {
+          clearInterval(reloj);
+          control.canal = null;
+        }
+        if (!control.activa || this.cerrado) break;
+        await new Promise((ok) => setTimeout(ok, pausa));
+        pausa = Math.min(pausa * 2, 30_000);
+      }
+    })();
+  }
+
+  private dejarControl(): void {
+    if (!this.control) return;
+    this.control.activa = false;
+    this.control.canal?.cerrar();
+    this.control = null;
+  }
+
+  /**
+   * Una orden del panel (D01): revocar y quitar enlace se cumplen aquí y quedan en el registro; renovar, alcance y
+   * código quedan pendientes de la persona en la web local. El resultado vuelve al relé con el mismo id.
+   */
+  async atenderOrden(canal: CanalControl, mensaje: unknown): Promise<void> {
+    const o = ORDEN.safeParse(mensaje);
+    if (!o.success) return;
+    const { id, accion, objetivo, datos } = o.data;
+    const responder = (estado: "hecho" | "pendiente" | "error", texto?: string) => {
+      canal.enviar({ tipo: "resultado", id, estado, ...(texto ? { mensaje: texto } : {}) });
+      this.informar();
+    };
+    const lectora = typeof objetivo === "string" ? this.datos.dispositivos().find((d) => huellaDe(d.clavePublica) === objetivo) : undefined;
+    try {
+      switch (accion) {
+        case "revocar": {
+          if (!lectora) return responder("error", "esa PC no lee la memoria de esta");
+          this.datos.revocar(lectora.id);
+          this.datos.registrar({ dispositivoId: lectora.id, dispositivo: lectora.nombre, herramienta: "panel", pedido: null, ids: [], resultado: "rechazo", motivo: "revocado_desde_panel" });
+          return responder("hecho", `${lectora.nombre} ya no puede leer esta memoria`);
+        }
+        case "quitar_enlace": {
+          if (typeof objetivo !== "string" || !this.datos.quitarEnlace(objetivo)) return responder("error", "no hay un enlace con ese nombre");
+          // Primero la respuesta: sin enlaces ni acceso, reconciliar cierra este mismo canal.
+          responder("hecho", `enlace «${objetivo}» quitado`);
+          this.reconciliar();
+          return;
+        }
+        case "renovar":
+          if (!lectora) return responder("error", "esa PC no lee la memoria de esta");
+          this.datos.crearPendiente("renovar", objetivo as string);
+          return responder("pendiente", `renovar ${lectora.nombre}: falta aceptarlo en la web de esta PC`);
+        case "alcance": {
+          if (!lectora) return responder("error", "esa PC no lee la memoria de esta");
+          const alcance = ALCANCE_PANEL.safeParse(datos);
+          if (!alcance.success) return responder("error", "alcance inválido");
+          alcanceDesdePanel(alcance.data);
+          this.datos.crearPendiente("alcance", objetivo as string, alcance.data);
+          return responder("pendiente", `cambiar el alcance de ${lectora.nombre}: falta aceptarlo en la web de esta PC`);
+        }
+        case "codigo":
+          this.datos.crearPendiente("codigo", null);
+          return responder("pendiente", "código nuevo: falta aceptarlo en la web de esta PC, donde se verá");
+        default:
+          return responder("error", "orden desconocida");
+      }
+    } catch (error) {
+      return responder("error", error instanceof ReglaError ? error.message : "no se pudo cumplir la orden");
+    }
   }
 
   private dejarDeEscuchar(buzon: string): void {
@@ -206,7 +396,7 @@ export class Remoto {
         const rele = this.datos.rele();
         if (!rele) break;
         try {
-          const t = await conectarRele({ url: rele.url, clave: rele.clave, buzon, env: this.env });
+          const t = await conectarRele({ url: rele.url, clave: rele.clave, buzon, env: this.env, pc: this.huella });
           if (!escucha.activa) {
             t.cerrar();
             break;
@@ -322,7 +512,11 @@ export class Remoto {
     }
     try {
       const pedido = await sesion.recibir(this.esperaMs * 5);
-      sesion.enviar(await this.atenderPedido(dispositivo as unknown as Dispositivo, pedido));
+      const respuesta = await this.atenderPedido(dispositivo as unknown as Dispositivo, pedido);
+      sesion.enviar(respuesta);
+      const ok = (respuesta as { ok?: unknown }).ok === true;
+      this.datos.sumarUso(ok ? { recibidas: 1, bytes: Buffer.byteLength(JSON.stringify(respuesta)) } : { rechazos: 1 });
+      this.informarPronto();
     } catch {
       // la lectora se fue o el canal se cortó: nada que responder
     } finally {
@@ -427,6 +621,7 @@ export class Remoto {
         throw new ReglaError(motivo, `la dueña rechazó el código (${motivo})`);
       }
       const enlace = this.datos.guardarEnlace({ origen, buzon: r.buzon, claveDuena: sesion.otro, enlaceId: r.enlace_id, venceEn: r.vence_en });
+      this.reconciliar();
       return { origen: enlace.origen, vence_en: enlace.venceEn };
     } catch (error) {
       if (error instanceof ReglaError) throw error;
@@ -447,7 +642,7 @@ export class Remoto {
   private async conectarLectora(rele: { url: string; clave: string }, buzon: string, limite: number): Promise<Transporte> {
     for (;;) {
       try {
-        return await conectarRele({ url: rele.url, clave: rele.clave, buzon, env: this.env, esperaMs: Math.max(100, limite - Date.now()) });
+        return await conectarRele({ url: rele.url, clave: rele.clave, buzon, env: this.env, esperaMs: Math.max(100, limite - Date.now()), pc: this.huella });
       } catch (error) {
         if (!(error instanceof ErrorRele && error.codigo === "buzon_ocupado") || Date.now() + 50 >= limite) throw error;
         await new Promise((ok) => setTimeout(ok, 50));
@@ -511,7 +706,12 @@ export class Remoto {
     })();
     try {
       const r = (await Promise.race([trabajo, vencido])) as { ok?: unknown; datos?: unknown; error?: { codigo?: unknown } } | null;
-      if (r && r.ok === true && typeof r.datos === "object" && r.datos !== null) return marcarExterno(r.datos as Record<string, unknown>, enlace.origen);
+      if (r && r.ok === true && typeof r.datos === "object" && r.datos !== null) {
+        this.datos.sumarUso({ hechas: 1, bytes: Buffer.byteLength(JSON.stringify(r.datos)) });
+        this.datos.marcarUsoEnlace(enlace.origen);
+        this.informarPronto();
+        return marcarExterno(r.datos as Record<string, unknown>, enlace.origen);
+      }
       const codigo = typeof r?.error?.codigo === "string" ? r.error.codigo : "error_remoto";
       if (codigo === "revocado" || codigo === "credencial_vencida") throw new ErrorEnlace("rechazado", enlace.origen, codigo);
       if (codigo === "no_encontrada") throw new ReglaError("no_encontrada", `no existe esa entrada en «${enlace.origen}» o no está compartida`);
@@ -529,6 +729,30 @@ export class Remoto {
       (t as Transporte | null)?.cerrar();
     }
   }
+}
+
+/**
+ * Un ámbito del alcance como texto del panel: «global», la referencia del proyecto tal cual («proyecto:x») o
+ * «repo:<ref>».
+ */
+function textoAmbito(a: Alcance["ambitos"][number]): string {
+  if (a.ambito === "global") return "global";
+  if (a.ambito === "proyecto") return a.ref ?? "proyecto";
+  return `repo:${a.ref ?? ""}`;
+}
+
+/** Alcance en la forma del panel al de la base; lanza si un ámbito no es válido. */
+function alcanceDesdePanel(datos: unknown): Alcance {
+  const a = ALCANCE_PANEL.parse(datos);
+  return {
+    ambitos: a.ambitos.map((texto) => {
+      if (texto === "global") return { ambito: "global" as const, ref: null };
+      if (texto.startsWith("proyecto:") && texto.length > 9) return { ambito: "proyecto" as const, ref: texto };
+      if (texto.startsWith("repo:") && texto.length > 5) return { ambito: "repo" as const, ref: texto.slice(5) };
+      throw new ReglaError("ambito_invalido", `ámbito desconocido: ${texto}`);
+    }),
+    noValidadas: a.pendientes,
+  };
 }
 
 /** Todo lo que viene de otra instalación lleva su origen y la marca de dato externo, en cada entrada. */
