@@ -198,8 +198,21 @@ export class DatosRemotos {
 
   crearDispositivo(nombre: string, clavePublica: string, buzon: string): Dispositivo {
     const ahora = this.reloj();
-    const existente = this.db.prepare("SELECT id FROM remoto_dispositivos WHERE clave_publica = ?").get(clavePublica) as { id: number } | undefined;
-    if (existente) throw new ReglaError("ya_enlazado", "esa instalación ya está enlazada: revocala antes de volver a enlazarla");
+    const existente = this.db.prepare("SELECT id, revocado_en FROM remoto_dispositivos WHERE clave_publica = ?").get(clavePublica) as
+      | { id: number; revocado_en: string | null }
+      | undefined;
+    if (existente && !existente.revocado_en) throw new ReglaError("ya_enlazado", "esa instalación ya está enlazada: revocala antes de volver a enlazarla");
+    if (existente) {
+      // Una PC revocada que vuelve a enlazarse reusa su fila: credencial y buzón nuevos y alcance vacío, como un enlace
+      // nuevo (AC-06); el registro anterior queda asociado al mismo id.
+      this.db
+        .prepare(
+          `UPDATE remoto_dispositivos SET nombre = ?, buzon = ?, enlazado_en = ?, vence_en = ?, revocado_en = NULL, usado_en = NULL,
+             alcance = '{"ambitos":[],"no_validadas":false}' WHERE id = ?`,
+        )
+        .run(nombre, buzon, ahora.toISOString(), new Date(ahora.getTime() + VIDA_CREDENCIAL_MS).toISOString(), existente.id);
+      return this.dispositivo(existente.id);
+    }
     const id = Number(
       this.db
         .prepare("INSERT INTO remoto_dispositivos (nombre, clave_publica, buzon, enlazado_en, vence_en) VALUES (?, ?, ?, ?, ?)")

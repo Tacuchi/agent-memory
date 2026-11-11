@@ -120,12 +120,18 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
       <p>
         Relé: {estado.rele ? <code>{estado.rele.url}</code> : <>sin configurar: corré «agent-memory remote relay &lt;url&gt;»</>}
       </p>
-      <NombrePc
+      {estado.nombre_pc === undefined && (
+        <p role="alert">
+          El servicio que responde es de una versión anterior a esta web: reinicialo con «agent-memory stop» y «agent-memory start» (si
+          «stop» no puede, te muestra cómo cerrarlo).
+        </p>
+      )}
+      {estado.nombre_pc !== undefined && <NombrePc
         estado={estado}
         guardar={(nombre) =>
           void accion(async () => setEstado(await cliente<Estado>("remoto_nombre", { nombre })), `Nombre guardado: el panel del relé muestra «${nombre}»`)
         }
-      />
+      />}
       <label className="casilla">
         <input
           type="checkbox"
@@ -142,7 +148,7 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
       </label>
 
       <PedidosPanel
-        pedidos={estado.pendientes}
+        pedidos={estado.pendientes ?? []}
         resolver={(p, aceptar) =>
           void accion(async () => {
             const r = await cliente<{ codigo?: CodigoNuevo }>("remoto_pendiente", { id: p.id, aceptar });

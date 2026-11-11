@@ -213,4 +213,15 @@ describe("pantalla «Acceso remoto»", () => {
     }
     expect(await screen.findByText("No hay pedidos del panel.")).toBeTruthy();
   });
+
+  it("con un servicio de una versión anterior (sin nombre_pc ni pendientes) avisa en vez de quedar en blanco", async () => {
+    const viejo: Cliente = async <T,>(op: string): Promise<T> => {
+      if (op === "remoto_estado") return { interruptor: true, rele: { url: "wss://rele.ejemplo" }, codigo: null, dispositivos: [], enlaces: [] } as T;
+      if (op === "remoto_registro") return { registro: [] } as T;
+      throw new ErrorApi("desconocida", "operación desconocida");
+    };
+    render(<Remoto cliente={viejo} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("versión anterior");
+    expect(screen.getByText("No hay pedidos del panel.")).toBeTruthy();
+  });
 });

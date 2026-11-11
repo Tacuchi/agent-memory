@@ -52,6 +52,7 @@ enlace remoto (solo lectura entre dos instalaciones, por un relé):
               [--imprimir]  solo muestra el enlace de un solo uso
   remote link <código> --nombre <origen> [--dispositivo <nombre>]
                             canjea un código de la otra instalación y la enlaza para leer
+  remote unlink <origen>    quita un enlace propio (deja de leer esa memoria); para volver a enlazar con el mismo nombre
   remote relay <url>        configura el relé (wss://…); la clave se lee por stdin
   remote status             estado del acceso remoto, dispositivos y enlaces, sin secretos
   relay                     corre el relé del enlace remoto (va detrás de HTTPS)
@@ -169,7 +170,14 @@ async function stop(): Promise<number> {
   const r = await detener(config);
   if (r.detenido) return salida(`agent-memory detenido (pid ${r.pid})`);
   if (await salud(config, 500)) {
-    process.stderr.write(`hay un servicio respondiendo en 127.0.0.1:${config.port} sin archivo de pid en ${config.pidPath}; detenelo desde su terminal\n`);
+    const matar =
+      process.platform === "win32"
+        ? `Stop-Process -Id (Get-NetTCPConnection -LocalPort ${config.port} -State Listen).OwningProcess`
+        : `kill $(lsof -ti tcp:${config.port} -sTCP:LISTEN)`;
+    process.stderr.write(
+      `hay un servicio respondiendo en 127.0.0.1:${config.port} sin archivo de pid en ${config.pidPath} (quizás de una versión anterior).\n` +
+        `Detenelo desde su terminal o con: ${matar}\nDespués: agent-memory start\n`,
+    );
     return 1;
   }
   return salida("agent-memory no estaba corriendo");
@@ -279,7 +287,7 @@ async function abrir(args: string[], ir?: "remoto"): Promise<number> {
 async function remote(args: string[]): Promise<number> {
   const [sub, ...resto] = args;
   if (sub === "code") return abrir(resto, "remoto");
-  if (sub !== "status" && sub !== "relay" && sub !== "link") return uso("uso: agent-memory remote code | link <código> --nombre <origen> | relay <url> | status");
+  if (sub !== "status" && sub !== "relay" && sub !== "link" && sub !== "unlink") return uso("uso: agent-memory remote code | link <código> --nombre <origen> | unlink <origen> | relay <url> | status");
   const { values, positionals } = parseArgs({ args: resto, allowPositionals: true, options: { nombre: { type: "string" }, dispositivo: { type: "string" } } });
   const config = cargarConfig();
   const arranque = await arrancarSeparado(config, ESPERA_START_MS);
@@ -293,6 +301,11 @@ async function remote(args: string[]): Promise<number> {
       if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
       const e = await cliente.llamar<EstadoEnlaceCli>("enlace_estado");
       return salida(formatearEstadoRemoto(e));
+    }
+    if (sub === "unlink") {
+      if (positionals.length !== 1) return uso("uso: agent-memory remote unlink <origen>");
+      await cliente.llamar("enlace_quitar", { origen: positionals[0] });
+      return salida(`enlace «${positionals[0]}» quitado: ya no se lee esa memoria`);
     }
     if (sub === "relay") {
       if (positionals.length !== 1) return uso("uso: agent-memory remote relay <url>   (la clave del relé, por stdin)");

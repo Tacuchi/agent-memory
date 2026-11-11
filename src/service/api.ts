@@ -96,6 +96,8 @@ const ESQUEMAS = {
   enlace_estado: z.object({}).strict(),
   enlace_rele: z.object({ url: z.string().min(1), clave: z.string().min(1) }).strict(),
   enlace_canjear: z.object({ codigo: z.string().min(1).max(100), origen: z.string().min(1).max(40), dispositivo: z.string().min(1).max(80).optional() }).strict(),
+  // Quitar un enlace propio solo restringe (deja de leer ese origen): lo puede pedir la CLI.
+  enlace_quitar: z.object({ origen: z.string().min(1).max(40) }).strict(),
 } as const;
 
 export type Operacion = keyof typeof ESQUEMAS;
@@ -425,6 +427,13 @@ export class Api {
 
   private enlace_canjear(d: z.infer<typeof ESQUEMAS.enlace_canjear>) {
     return this.enlace().enlazar(d.codigo, d.origen, d.dispositivo);
+  }
+
+  private enlace_quitar(d: z.infer<typeof ESQUEMAS.enlace_quitar>) {
+    const r = this.enlace();
+    if (!r.datos.quitarEnlace(d.origen)) throw new ReglaError("origen_desconocido", `no hay un enlace llamado «${d.origen}»`);
+    r.reconciliar();
+    return { quitado: d.origen };
   }
 
   /** Sin huella, la entrada no cuenta como confirmada; una huella distinta se rechaza. */
