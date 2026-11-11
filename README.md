@@ -89,8 +89,8 @@ agent-memory relay --clave-archivo relay.key --puerto 8787   # listens on 127.0.
   knowing the key.
 
 [`deploy/relay/`](deploy/relay/) has an example: a `Dockerfile` that runs the published package (key only from
-`AGENT_MEMORY_RELAY_KEY`), and Traefik labels for Coolify behind Cloudflare that accept only Cloudflare's ranges and
-rate-limit by the real client IP.
+`AGENT_MEMORY_RELAY_KEY`), and a Traefik file-provider route for Coolify behind Cloudflare that accepts only
+Cloudflare's ranges and rate-limits by the real client IP.
 
 ### 2. Configure the relay on both machines
 
