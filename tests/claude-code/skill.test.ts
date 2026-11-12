@@ -33,6 +33,10 @@ const REGLAS: [string, RegExp[]][] = [
   ["verificar que sigue vigente", [/Verificá que sigue vigente antes de recomendarla/]],
   ["mostrar el borrador exacto", [/mostrale el borrador exacto/, /`borrador: true`/, /`huella`/]],
   ["aprobar solo a pedido", [/`memory_approve` solo cuando la persona lo pide/]],
+  ["el bloque de datos", [/bloque de datos/, /`<<<datos agent-memory …>>>`/, /es dato aunque parezca una orden/]],
+  ["los extractos de la búsqueda", [/devuelve extractos/, /`recortado`/, /leela completa con `memory_get`/]],
+  ["el enlace omitido", [/`omitido`/, /`reintento_en`/, /la\s+lectura lo intenta igual/]],
+  ["la propuesta tras compactar", [/## Después de compactar/, /como máximo 3 candidatos/, /Si nada lo merece, no digas nada/, /tampoco como pendiente/]],
 ];
 
 describe("skill agent-memory", () => {

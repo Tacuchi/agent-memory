@@ -52,7 +52,21 @@ agent-memory doctor
 `SessionStart` hook to Claude Code's `settings.json` and copies the `agent-memory` skill. It never
 asks questions and can be repeated safely. `doctor` checks Node, the token, the local service,
 sqlite-vec, the model and the Claude Code integration, including whether the paths registered in
-the hook still exist.
+the hook still exist and whether the installed skill matches this version.
+
+What the agent gets:
+
+- **At session start**, a compact index in four sections: work in progress, then the current
+  project and repo, then global entries, then entries still pending your review. Each section says
+  how many entries it left out; the agent finds those with `memory_search`.
+- **After the conversation is compacted**, the same index plus an instruction to propose at most
+  three things worth saving, as exact drafts in a single message, or to say nothing. Nothing is
+  saved until you confirm a draft.
+- **From `memory_search`**, excerpts (`extracto`, `largo`, `recortado`) instead of full contents;
+  `memory_get` returns the whole entry.
+- Entry text always arrives inside a delimited data block, marked as data and not instructions.
+- A linked machine that did not answer is reported as `omitido` for a while (30 s, doubling up to
+  5 min) instead of making every search wait for it; reading an entry from it retries right away.
 
 Run `agent-memory --help` for all commands.
 
@@ -190,7 +204,17 @@ agent-memory install claude-code
 ```
 
 Repeating `install claude-code` after an update (or after changing Node versions) refreshes the
-paths registered in Claude Code. `agent-memory doctor` reports when they no longer exist.
+paths registered in Claude Code and copies the skill of the new version. `agent-memory doctor`
+reports when those paths no longer exist or the installed skill is from another version.
+
+When a new version changes the database layout, the first start makes a full copy of the database
+next to it (`~/.agent-memory/copia-previa-esquema-N.db`, readable only by your account) before
+changing anything. If the update fails, the database stays as it was and the error names the copy.
+The copy is deleted after 7 days, and `agent-memory purge` deletes it at once, since it still holds
+the purged entry.
+
+`indice.tope_tokens` in `~/.agent-memory/config.json` (the index budget, 1500 by default) must be
+at least 400.
 
 ## Uninstall
 

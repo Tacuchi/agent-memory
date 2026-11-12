@@ -147,6 +147,15 @@ export function skillInstalada(env: NodeJS.ProcessEnv): boolean {
   return existsSync(join(rutasClaude(env).skill, "SKILL.md"));
 }
 
+/** La skill instalada es la de este paquete: actualizar el paquete no la copia de nuevo. */
+export function skillAlDia(env: NodeJS.ProcessEnv): boolean {
+  try {
+    return readFileSync(join(rutasClaude(env).skill, "SKILL.md"), "utf8") === readFileSync(join(origenSkill(), "SKILL.md"), "utf8");
+  } catch {
+    return false;
+  }
+}
+
 function escribirSettings(ruta: string, datos: Settings): void {
   mkdirSync(dirname(ruta), { recursive: true });
   writeFileSync(ruta, `${JSON.stringify(datos, null, 2)}\n`);

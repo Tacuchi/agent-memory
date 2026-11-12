@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import type { Config } from "./config.js";
-import { claudeDisponible, hookInstalado, mcpRegistrado, rutasHook, skillInstalada } from "./claude-code/install.js";
+import { claudeDisponible, hookInstalado, mcpRegistrado, rutasHook, skillAlDia, skillInstalada } from "./claude-code/install.js";
 import { openDatabase } from "./db/driver.js";
 import { NODE_MINIMO, nodeSuficiente } from "./node-minimo.js";
 import { autochequear, explicarFallo, type EmbedderAutochequeo } from "./search/autochequeo.js";
@@ -83,7 +83,14 @@ export async function diagnosticar(config: Config, env: NodeJS.ProcessEnv, opcio
               detalle: `el hook y el MCP apuntan a rutas que ya no existen: ${rotas.join(", ")}`,
               arreglo: "repetí «agent-memory install claude-code»",
             }
-          : { nombre: "claude-code", nivel: "ok", detalle: "MCP, hook SessionStart y skill instalados" },
+          : !skillAlDia(env)
+            ? {
+                nombre: "claude-code",
+                nivel: "aviso",
+                detalle: "la skill instalada es de otra versión de agent-memory: el agente no conoce los cambios de esta",
+                arreglo: "«agent-memory install claude-code»",
+              }
+            : { nombre: "claude-code", nivel: "ok", detalle: "MCP, hook SessionStart y skill instalados" },
     );
   }
   return h;

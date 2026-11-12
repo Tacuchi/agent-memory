@@ -107,6 +107,20 @@ describe("rutas del hook registrado", () => {
   });
 });
 
+describe("doctor y la skill de otra versión", () => {
+  it("avisa si la skill instalada difiere de la del paquete y propone repetir install", async () => {
+    e = await entornoCli();
+    expect((await correr(e, ["install", "claude-code"])).code).toBe(0);
+    expect((await correr(e, ["doctor"])).stdout).not.toMatch(/skill instalada es de otra versión/);
+    writeFileSync(skillPath(), readFileSync(skillPath(), "utf8").replace("## Después de compactar", "## Sección vieja"));
+    const doctor = await correr(e, ["doctor"]);
+    expect(doctor.stdout).toMatch(/claude-code: la skill instalada es de otra versión de agent-memory/);
+    expect(doctor.stdout).toContain("arreglo: «agent-memory install claude-code»");
+    expect((await correr(e, ["install", "claude-code"])).code).toBe(0);
+    expect((await correr(e, ["doctor"])).stdout).not.toMatch(/skill instalada es de otra versión/);
+  });
+});
+
 describe("install / uninstall claude-code", () => {
   it("instalar dos veces y desinstalar deja settings.json byte a byte como antes", async () => {
     e = await entornoCli();
