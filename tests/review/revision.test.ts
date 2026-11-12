@@ -30,19 +30,28 @@ describe("vista de revisión", () => {
     expect(listado()).toEqual([]);
 
     t.avanzar(91 * DIA);
-    t.store.registrarUso([usada]);
+    t.store.registrarLeida(usada);
     expect(listado()).toEqual([
       [quieta, ["sin_uso"]],
       [proyecto, ["sin_uso"]],
     ]);
 
     t.avanzar(90 * DIA);
-    t.store.registrarUso([usada, quieta, proyecto]);
+    for (const id of [usada, quieta, proyecto]) t.store.registrarLeida(id);
     // Usadas, pero sin verificar hace más de 180 días; el proyecto no se verifica.
     expect(listado()).toEqual([
       [usada, ["sin_verificar"]],
       [quieta, ["sin_verificar"]],
     ]);
+  });
+
+  it("«sin uso» depende de la lectura: aparecer en búsquedas no la saca de la lista", async () => {
+    const id = await crear("Solo mostrada");
+    t.avanzar(100 * DIA);
+    t.store.registrarMostradas([id]);
+    expect(listado()).toEqual([[id, ["sin_uso"]]]);
+    t.store.registrarLeida(id);
+    expect(listado()).toEqual([]);
   });
 
   it("confirmar que sigue vigente deja la fecha y una revisión, y la saca de la lista", async () => {

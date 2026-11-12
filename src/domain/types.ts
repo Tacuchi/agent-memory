@@ -46,8 +46,15 @@ export interface Entrada {
   creadaEn: string;
   actualizadaEn: string;
   validadaEn: string | null;
+  /** Histórico (hasta 0.4): aparecer en una búsqueda o leerla sumaba igual. Ya no cambia. */
   usadaEn: string | null;
   usos: number;
+  /** Última vez y veces que apareció en un resultado de búsqueda pedido por el agente. */
+  mostradaEn: string | null;
+  mostradaVeces: number;
+  /** Última vez y veces que el agente pidió su detalle. */
+  leidaEn: string | null;
+  leidaVeces: number;
   /** Última vez que la persona confirmó en la vista de revisión que sigue vigente. */
   verificadaEn: string | null;
 }
@@ -60,7 +67,7 @@ export interface Caducidad {
 }
 
 /** Campos de una entrada que se versionan en cada revisión. */
-export type Instantanea = Omit<Entrada, "id" | "usadaEn" | "usos" | "verificadaEn">;
+export type Instantanea = Omit<Entrada, "id" | "usadaEn" | "usos" | "verificadaEn" | "mostradaEn" | "mostradaVeces" | "leidaEn" | "leidaVeces">;
 
 export interface Revision {
   entradaId: number;

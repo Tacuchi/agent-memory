@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { TOPE_INDICE_MINIMO } from "./indice/indice.js";
 
 /** Puerto por defecto del servicio local. */
 export const PUERTO_POR_DEFECTO = 47821;
@@ -63,7 +64,7 @@ export function cargarConfig(env: NodeJS.ProcessEnv = process.env): Config {
     exportacionesPath: join(home, "exportaciones"),
     port,
     proyectos: proyectos(archivo.proyectos),
-    topeIndice: entero(archivo.indice?.tope_tokens, "indice.tope_tokens", 200) ?? TOPE_INDICE_POR_DEFECTO,
+    topeIndice: entero(archivo.indice?.tope_tokens, "indice.tope_tokens", TOPE_INDICE_MINIMO) ?? TOPE_INDICE_POR_DEFECTO,
     esperaHookMs: entero(archivo.hook?.espera_ms, "hook.espera_ms", 0) ?? ESPERA_HOOK_POR_DEFECTO_MS,
     revision: {
       diasSinUso: entero(archivo.revision?.dias_sin_uso, "revision.dias_sin_uso", 1) ?? DIAS_SIN_USO_POR_DEFECTO,

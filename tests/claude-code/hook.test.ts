@@ -2,6 +2,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { INDICACION_TRAS_COMPACTAR } from "../../src/indice/indice.js";
 import { leerPid, procesoVivo } from "../../src/service/daemon.js";
 import { correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild } from "../helpers/servicio.js";
@@ -60,6 +61,24 @@ describe("hook session-start", () => {
     ocupante = null;
     await correr(e, ["stop"]);
     expect(procesoVivo(pid!)).toBe(false);
+  });
+
+  it("solo tras compactar agrega la indicación de proponer candidatos, fuera del bloque de datos (AC-27 a AC-30)", async () => {
+    e = await entornoCli();
+    configurar({ hook: { espera_ms: 15_000 } });
+    const compactada = await correr(e, ["hook", "session-start"], { input: JSON.stringify({ cwd: e.home, source: "compact" }) });
+    expect(compactada.code).toBe(0);
+    expect(compactada.stdout).toContain(INDICACION_TRAS_COMPACTAR);
+    expect(compactada.stdout.trimEnd().endsWith(INDICACION_TRAS_COMPACTAR)).toBe(true);
+    for (const pista of ["como máximo 3", "un solo mensaje", "borrador exacto", "pendientes y las rechazadas", "no digas nada", "lo dijo la persona o lo concluiste", "tampoco como pendiente", "antes de la compactación no cuenta"]) {
+      expect(INDICACION_TRAS_COMPACTAR).toContain(pista);
+    }
+    for (const source of ["startup", "resume", "clear", undefined]) {
+      const r = await correr(e, ["hook", "session-start"], { input: JSON.stringify({ cwd: e.home, ...(source ? { source } : {}) }) });
+      expect(r.code).toBe(0);
+      expect(r.stdout, String(source)).toMatch(/índice de la memoria/);
+      expect(r.stdout, String(source)).not.toContain("después de compactar");
+    }
   });
 
   it("con stdin ilegible usa el directorio actual y no falla", async () => {

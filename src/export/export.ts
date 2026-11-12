@@ -81,6 +81,10 @@ export function markdown(e: Entrada, revisiones: Revision[]): string {
     ["verificada_en", e.verificadaEn],
     ["usada_en", e.usadaEn],
     ["usos", e.usos],
+    ["mostrada_en", e.mostradaEn],
+    ["mostrada_veces", e.mostradaVeces],
+    ["leida_en", e.leidaEn],
+    ["leida_veces", e.leidaVeces],
   ];
   const partes = ["---", ...cabecera.map(([k, v]) => `${k}: ${yaml(v)}`), "---", "", `# ${e.titulo}`, "", e.contenido, ""];
   if (revisiones.length) {

@@ -6,6 +6,7 @@ import { citar, rutaEfimera, rutasHook } from "../../src/claude-code/install.js"
 import { HERRAMIENTAS } from "../../src/mcp/server.js";
 import { clienteMcp, correr, entornoCli, type EntornoCli } from "../helpers/cli.js";
 import { asegurarBuild, RAIZ } from "../helpers/servicio.js";
+import { descercar } from "../helpers/cerco.js";
 import { dirTemporal } from "../helpers/temp.js";
 
 // Instalar y desinstalar MCP, hook y skill con un `claude` falso y un HOME temporal.
@@ -189,7 +190,7 @@ describe("install / uninstall claude-code", () => {
       expect(tools.map((t) => t.name).sort()).toEqual([...HERRAMIENTAS].sort());
       const r = (await cliente.callTool({ name: "memory_list", arguments: {} })) as { isError?: boolean; content: { text: string }[] };
       expect(r.isError).toBeFalsy();
-      expect(JSON.parse(r.content[0]!.text)).toEqual({ entradas: [] });
+      expect(JSON.parse(descercar(r.content[0]!.text))).toEqual({ entradas: [] });
     } finally {
       await cliente.close();
     }

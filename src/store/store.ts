@@ -155,6 +155,10 @@ export class MemoryStore {
       validadaEn: null,
       usadaEn: null,
       usos: 0,
+      mostradaEn: null,
+      mostradaVeces: 0,
+      leidaEn: null,
+      leidaVeces: 0,
       verificadaEn: null,
     };
     if (base.validacion === "validada") base.validadaEn = marca;
@@ -254,6 +258,10 @@ export class MemoryStore {
       validadaEn: reglas.validacionInicial(tipo, { actor: "persona" }).validacion === "validada" ? marca : null,
       usadaEn: null,
       usos: 0,
+      mostradaEn: null,
+      mostradaVeces: 0,
+      leidaEn: null,
+      leidaVeces: 0,
       verificadaEn: null,
     };
     const entrada = transaction(this.db, () => {
@@ -350,7 +358,8 @@ export class MemoryStore {
     const r: { entrada: Entrada; motivos: MotivoRevision[] }[] = [];
     for (const e of this.listar({ validacion: ["pendiente", "validada"] }, 100_000)) {
       const motivos: MotivoRevision[] = [];
-      const ultimoUso = maximo(e.usadaEn, e.verificadaEn, e.creadaEn);
+      // «Sin uso» = nadie la leyó (ni la confirmó) en el plazo: aparecer en búsquedas no cuenta.
+      const ultimoUso = maximo(e.leidaEn, e.verificadaEn, e.creadaEn);
       if (ultimoUso < limiteUso) motivos.push("sin_uso");
       if (e.validacion !== null && maximo(e.verificadaEn, e.validadaEn, e.creadaEn) < limiteVerificacion) motivos.push("sin_verificar");
       if (motivos.length) r.push({ entrada: e, motivos });
@@ -358,14 +367,19 @@ export class MemoryStore {
     return r.sort((a, b) => a.entrada.id - b.entrada.id);
   }
 
-  /** Uso = el agente la lee en detalle o la recibe en una búsqueda. */
-  registrarUso(ids: readonly number[]): void {
+  /** «Mostrada»: apareció en un resultado de búsqueda pedido por el agente. */
+  registrarMostradas(ids: readonly number[]): void {
     if (!ids.length) return;
     const marca = this.reloj().toISOString();
-    const stmt = this.db.prepare("UPDATE entradas SET usos = usos + 1, usada_en = ? WHERE id = ?");
+    const stmt = this.db.prepare("UPDATE entradas SET mostrada_veces = mostrada_veces + 1, mostrada_en = ? WHERE id = ?");
     transaction(this.db, () => {
       for (const id of new Set(ids)) stmt.run(marca, id);
     });
+  }
+
+  /** «Leída»: el agente pidió su detalle. */
+  registrarLeida(id: number): void {
+    this.db.prepare("UPDATE entradas SET leida_veces = leida_veces + 1, leida_en = ? WHERE id = ?").run(this.reloj().toISOString(), id);
   }
 
   // ── Lectura ──────────────────────────────────────────────────────────────────

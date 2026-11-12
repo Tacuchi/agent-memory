@@ -21,6 +21,10 @@ export interface FilaEntrada {
   usada_en: string | null;
   usos: number;
   verificada_en: string | null;
+  mostrada_en: string | null;
+  mostrada_veces: number;
+  leida_en: string | null;
+  leida_veces: number;
 }
 
 export function desdeFila(f: FilaEntrada): Entrada {
@@ -45,6 +49,10 @@ export function desdeFila(f: FilaEntrada): Entrada {
     usadaEn: f.usada_en,
     usos: f.usos,
     verificadaEn: f.verificada_en ?? null,
+    mostradaEn: f.mostrada_en,
+    mostradaVeces: f.mostrada_veces,
+    leidaEn: f.leida_en,
+    leidaVeces: f.leida_veces,
   };
 }
 
@@ -71,7 +79,7 @@ export function aParametros(e: Instantanea): Record<string, string | number | nu
 }
 
 export function instantanea(e: Entrada): Instantanea {
-  const { id: _id, usadaEn: _u, usos: _n, verificadaEn: _v, ...resto } = e;
+  const { id: _id, usadaEn: _u, usos: _n, verificadaEn: _v, mostradaEn: _me, mostradaVeces: _mv, leidaEn: _le, leidaVeces: _lv, ...resto } = e;
   return resto;
 }
 

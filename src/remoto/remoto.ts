@@ -34,12 +34,15 @@ const ORDEN = z.object({ tipo: z.literal("orden"), id: z.string().min(1).max(40)
 const ALCANCE_PANEL = z.object({ ambitos: z.array(z.string().min(1).max(200)).max(50), pendientes: z.boolean() }).strict();
 export const LECTURAS_REMOTAS = ["buscar", "leer", "listar", "revisiones"] as const;
 export type LecturaRemota = (typeof LECTURAS_REMOTAS)[number];
-export type EstadoEnlace = "ok" | "sin_respuesta" | "rechazado" | "version_incompatible";
+export type EstadoEnlace = "ok" | "sin_respuesta" | "rechazado" | "version_incompatible" | "omitido";
+/** Tras un `sin_respuesta`, las búsquedas omiten ese enlace 30 s, el doble con cada fallo seguido, hasta 5 min. */
+export const OMISION_INICIAL_MS = 30_000;
+export const OMISION_MAXIMA_MS = 300_000;
 
 /** Error de un pedido a un enlace: el estado que la lectora muestra en `enlaces`. */
 export class ErrorEnlace extends ReglaError {
   constructor(
-    readonly estado: Exclude<EstadoEnlace, "ok">,
+    readonly estado: Exclude<EstadoEnlace, "ok" | "omitido">,
     readonly origen: string,
     readonly motivo: string | null,
   ) {
@@ -96,6 +99,8 @@ export class Remoto {
   private readonly secretos = new Map<string, Buffer>();
   private readonly escuchas = new Map<string, Escucha>();
   private readonly enCurso = new Map<string, Promise<unknown>>();
+  /** Enlaces que no respondieron: hasta cuándo las búsquedas no los esperan. Solo en memoria. */
+  private readonly omisiones = new Map<string, { fallos: number; hasta: number; motivo: string | null }>();
   private readonly revision: NodeJS.Timeout;
   private cerrado = false;
   /** Huella pública de esta PC ante el relé. */
@@ -750,17 +755,45 @@ export class Remoto {
     const actual = anterior.catch(() => undefined).then(() => this.pedirRegistrando(enlace, op, datos));
     this.enCurso.set(origen, actual);
     try {
-      return await actual;
+      const r = await actual;
+      // Respondió: las búsquedas vuelven a consultarlo.
+      this.omisiones.delete(origen);
+      return r;
+    } catch (error) {
+      if (error instanceof ErrorEnlace && error.estado === "sin_respuesta") this.omitirDesdeAhora(origen, error.motivo);
+      // Cualquier otra respuesta (un rechazo, una entrada que no está) prueba que el enlace responde.
+      else this.omisiones.delete(origen);
+      throw error;
     } finally {
       if (this.enCurso.get(origen) === actual) this.enCurso.delete(origen);
     }
   }
 
-  /** Búsqueda en todos los enlaces en paralelo, con la espera corta; nunca falla: cada enlace dice su estado. */
+  private omitirDesdeAhora(origen: string, motivo: string | null): void {
+    const fallos = (this.omisiones.get(origen)?.fallos ?? 0) + 1;
+    const plazo = Math.min(OMISION_INICIAL_MS * 2 ** (fallos - 1), OMISION_MAXIMA_MS);
+    this.omisiones.set(origen, { fallos, hasta: this.store.ahora().getTime() + plazo, motivo });
+  }
+
+  /**
+   * Búsqueda en todos los enlaces en paralelo, con la espera corta; nunca falla: cada enlace dice su estado. Un enlace
+   * que acaba de no responder se omite sin esperarlo hasta `reintento_en`; una lectura que lo nombra lo intenta igual.
+   */
   async buscarEnEnlaces(consulta: string, filtros: Record<string, unknown> | undefined, limite: number | undefined) {
     const enlaces = this.datos.enlaces();
+    const ahora = this.store.ahora().getTime();
     const respuestas = await Promise.all(
       enlaces.map(async (e) => {
+        const omision = this.omisiones.get(e.origen);
+        if (omision && omision.hasta > ahora) {
+          return {
+            origen: e.origen,
+            estado: "omitido" as EstadoEnlace,
+            motivo: `no respondió en una consulta reciente${omision.motivo ? ` (${omision.motivo})` : ""}; no se lo esperó`,
+            reintento_en: new Date(omision.hasta).toISOString(),
+            resultados: [],
+          };
+        }
         try {
           const r = await this.pedir(e.origen, "buscar", limpiar({ consulta, filtros, limite }));
           return { origen: e.origen, estado: "ok" as EstadoEnlace, motivo: null, resultados: (r.resultados as unknown[] | undefined) ?? [] };
@@ -772,7 +805,7 @@ export class Remoto {
     );
     return {
       resultados: respuestas.flatMap((r) => r.resultados),
-      enlaces: respuestas.map(({ origen, estado, motivo }) => ({ origen, estado, motivo })),
+      enlaces: respuestas.map(({ resultados: _r, ...enlace }) => enlace),
     };
   }
 

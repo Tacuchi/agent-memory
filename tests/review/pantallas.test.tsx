@@ -27,6 +27,7 @@ describe("vista de revisión", () => {
     const [uno, dos, tres] = ids as [number, number, number];
     const t1 = await screen.findByRole("article", { name: `Revisar #${uno}` });
     expect(within(t1).getByText(/sin uso · sin verificar/)).toBeTruthy();
+    expect(within(t1).getByText(/leída — · mostrada en búsquedas —/)).toBeTruthy();
 
     fireEvent.click(within(t1).getByRole("button", { name: "Sigue vigente" }));
     await screen.findByText(`#${uno} confirmada como vigente`);

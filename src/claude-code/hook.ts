@@ -1,7 +1,7 @@
 import { ClienteServicio } from "../client.js";
 import { cargarConfig } from "../config.js";
 import { resolverContexto } from "../context.js";
-import type { Indice } from "../indice/indice.js";
+import { INDICACION_TRAS_COMPACTAR, type Indice } from "../indice/indice.js";
 import { arrancarSeparado } from "../service/daemon.js";
 
 // Hook `SessionStart` de Claude Code: imprime el índice del contexto de la
@@ -9,6 +9,8 @@ import { arrancarSeparado } from "../service/daemon.js";
 
 export interface EntradaHook {
   cwd?: string;
+  /** Por qué arranca la sesión, según Claude Code: startup, resume, clear o compact. */
+  source?: string;
 }
 
 export async function hookSessionStart(entrada: EntradaHook, env: NodeJS.ProcessEnv = process.env): Promise<string> {
@@ -21,7 +23,8 @@ export async function hookSessionStart(entrada: EntradaHook, env: NodeJS.Process
       const arranque = await arrancarSeparado(config, esperaMs);
       if (!arranque.salud) return avisoSinServicio(esperaMs);
       const indice = await new ClienteServicio(config).llamar<Indice>("indice", { contexto, tope: config.topeIndice });
-      return indice.texto;
+      // Solo tras compactar: al iniciar, reanudar, limpiar o bifurcar no hay nada nuevo que proponer guardar.
+      return entrada.source === "compact" ? `${indice.texto}\n\n${INDICACION_TRAS_COMPACTAR}` : indice.texto;
     })();
     // Tope duro: aunque algo se cuelgue, la sesión arranca.
     return await Promise.race([trabajo, demora(esperaMs + 2000).then(() => avisoSinServicio(esperaMs))]);
@@ -56,8 +59,11 @@ export async function leerEntradaHook(stdin: NodeJS.ReadStream = process.stdin, 
     stdin.on("error", fin);
   });
   try {
-    const datos = JSON.parse(texto) as { cwd?: unknown };
-    return typeof datos.cwd === "string" ? { cwd: datos.cwd } : {};
+    const datos = JSON.parse(texto) as { cwd?: unknown; source?: unknown };
+    return {
+      ...(typeof datos.cwd === "string" ? { cwd: datos.cwd } : {}),
+      ...(typeof datos.source === "string" ? { source: datos.source } : {}),
+    };
   } catch {
     return {};
   }

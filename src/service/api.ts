@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ambitoPorDefecto } from "../context.js";
 import { join, isAbsolute } from "node:path";
 import { exportar } from "../export/export.js";
-import { armarIndice } from "../indice/indice.js";
+import { TOPE_INDICE_MINIMO, armarIndice } from "../indice/indice.js";
 import { huella } from "../domain/draft.js";
 import { validarTexto, validarTipo } from "../domain/rules.js";
 import { AMBITOS, ReglaError, TIPOS, VALIDACIONES, type Actor, type Ambito, type Contexto } from "../domain/types.js";
@@ -80,7 +80,7 @@ const ESQUEMAS = {
   exportar: z.object({ completa: z.boolean().optional(), destino: z.string().min(1).optional() }).strict(),
   revision: z.object({}).strict(),
   confirmar_vigencia: z.object({ id }).strict(),
-  indice: z.object({ contexto: contextoObligatorio, tope: z.number().int().min(200).max(100_000).optional() }).strict(),
+  indice: z.object({ contexto: contextoObligatorio, tope: z.number().int().min(TOPE_INDICE_MINIMO).max(100_000).optional() }).strict(),
   // Enlace remoto, gobierno de la dueña: solo la persona (SOLO_PERSONA).
   remoto_estado: z.object({}).strict(),
   remoto_interruptor: z.object({ encendido: z.boolean() }).strict(),
@@ -202,7 +202,7 @@ export class Api {
   private async buscar(d: z.infer<typeof ESQUEMAS.buscar>, actor: Actor) {
     const remotos = this.remoto?.tieneEnlaces() ? this.remoto.buscarEnEnlaces(d.consulta, d.filtros, d.limite) : null;
     const r = await this.buscador.buscar(d.consulta, { filtros: aFiltros(d.filtros, d.contexto), limite: d.limite ?? 10 });
-    if (actor === "agente") this.store.registrarUso(r.resultados.map((x) => x.entrada.id));
+    if (actor === "agente") this.store.registrarMostradas(r.resultados.map((x) => x.entrada.id));
     const local = { modo: r.modo, aviso: r.aviso, resultados: r.resultados.map(vistaResultado) as unknown[] };
     if (!remotos) return local;
     const enlazados = await remotos;
@@ -212,7 +212,7 @@ export class Api {
   private leer(d: z.infer<typeof ESQUEMAS.leer>, actor: Actor) {
     if (esRemoto(d.origen)) return this.enlace().pedir(d.origen, "leer", { id: d.id });
     const { entrada, relaciones } = this.store.leer(d.id);
-    if (actor === "agente") this.store.registrarUso([d.id]);
+    if (actor === "agente") this.store.registrarLeida(d.id);
     return { entrada: vistaEntrada(entrada), relaciones: relaciones.map(vistaRelacion) };
   }
 
@@ -344,7 +344,10 @@ export class Api {
       entradas: this.store.paraRevisar(this.umbrales).map(({ entrada, motivos }) => ({
         ...vistaEntrada(entrada, false),
         motivos,
-        usada_en: entrada.usadaEn,
+        mostrada_en: entrada.mostradaEn,
+        mostrada_veces: entrada.mostradaVeces,
+        leida_en: entrada.leidaEn,
+        leida_veces: entrada.leidaVeces,
         verificada_en: entrada.verificadaEn,
         validada_en: entrada.validadaEn,
       })),

@@ -156,12 +156,12 @@ describe("API de la memoria", () => {
     expect((await s.api("buscar", { consulta: "comillas", contexto: ctx })).datos.resultados).toHaveLength(1);
   });
 
-  it("registra el uso cuando el agente lee o recibe una entrada en una búsqueda", async () => {
+  it("cuenta aparte cuando el agente recibe una entrada en una búsqueda y cuando la lee; los usos viejos no cambian", async () => {
     const { datos } = await s.api("crear", { tipo: "leccion", titulo: "Uso", contenido: "contador de uso", contexto: ctx });
     const id = datos.entrada.id as number;
     await s.api("buscar", { consulta: "contador", contexto: ctx });
     await s.api("leer", { id });
-    expect(s.app.store.obtener(id)).toMatchObject({ usos: 2, usadaEn: expect.any(String) });
+    expect(s.app.store.obtener(id)).toMatchObject({ mostradaVeces: 1, mostradaEn: expect.any(String), leidaVeces: 1, leidaEn: expect.any(String), usos: 0, usadaEn: null });
   });
 
   it("cada fallo llega como error explícito con código", async () => {

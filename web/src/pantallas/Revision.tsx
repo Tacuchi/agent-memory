@@ -3,7 +3,15 @@ import { mensajeError, type Cliente, type Entrada } from "../api";
 import type { Navegar } from "../App";
 import { Aviso, Estados, fecha } from "./comunes";
 
-type ParaRevisar = Entrada & { motivos: ("sin_uso" | "sin_verificar")[]; usada_en: string | null; verificada_en: string | null; validada_en: string | null };
+type ParaRevisar = Entrada & {
+  motivos: ("sin_uso" | "sin_verificar")[];
+  mostrada_en: string | null;
+  mostrada_veces: number;
+  leida_en: string | null;
+  leida_veces: number;
+  verificada_en: string | null;
+  validada_en: string | null;
+};
 
 const MOTIVOS = { sin_uso: "sin uso", sin_verificar: "sin verificar" } as const;
 
@@ -64,7 +72,8 @@ export function Revision({ cliente, navegar }: { cliente: Cliente; navegar: Nave
             </button>
           </h3>
           <p className="meta">
-            {e.motivos.map((m) => MOTIVOS[m]).join(" · ")} · último uso {fecha(e.usada_en)} · verificada {fecha(e.verificada_en ?? e.validada_en)}
+            {e.motivos.map((m) => MOTIVOS[m]).join(" · ")} · leída {fecha(e.leida_en)} · mostrada en búsquedas {fecha(e.mostrada_en)} · verificada{" "}
+            {fecha(e.verificada_en ?? e.validada_en)}
           </p>
           <Estados entrada={e} />
           <div className="acciones">
