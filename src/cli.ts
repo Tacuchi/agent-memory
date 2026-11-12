@@ -407,8 +407,11 @@ async function purge(args: string[]): Promise<number> {
       process.stderr.write("purga cancelada: el id no coincide; no se borró nada\n");
       return 1;
     }
-    purgar(store, id, config.purgasPath);
-    return salida(`#${id} purgada; quedó anotada en ${config.purgasPath} con el id y la fecha, sin contenido`);
+    const purga = purgar(store, id, config.purgasPath);
+    const copias = purga.copiasBorradas.length
+      ? `\nTambién se borró la copia previa a la última actualización de la base, que todavía la guardaba: ${purga.copiasBorradas.join(", ")}`
+      : "";
+    return salida(`#${id} purgada; quedó anotada en ${config.purgasPath} con el id y la fecha, sin contenido${copias}`);
   } finally {
     store.close();
   }

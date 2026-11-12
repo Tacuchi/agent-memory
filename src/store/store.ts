@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { openDatabase, transaction, vectorBlob, type Database } from "../db/driver.js";
-import { DIMENSIONES, migrar } from "../db/schema.js";
+import { rmSync } from "node:fs";
+import { DIMENSIONES, copiasPrevias, migrar, vencerCopiasPrevias } from "../db/schema.js";
 import { redactar, PATRONES_POR_DEFECTO, type PatronSecreto } from "../domain/redact.js";
 import * as reglas from "../domain/rules.js";
 import {
@@ -81,6 +82,19 @@ export class MemoryStore {
     this.patrones = opciones.patronesSecretos ?? PATRONES_POR_DEFECTO;
     this.reloj = opciones.reloj ?? (() => new Date());
     migrar(db);
+    this.vencerCopiasPrevias();
+  }
+
+  /** Borra la copia previa a una reconstrucción cuando ya pasaron sus días de vida; devuelve las borradas. */
+  vencerCopiasPrevias(): string[] {
+    return vencerCopiasPrevias(this.db, this.reloj());
+  }
+
+  /** Borra ya las copias previas (la purga no puede dejar el contenido en ningún lado); devuelve las borradas. */
+  borrarCopiasPrevias(): string[] {
+    const rutas = copiasPrevias(this.db);
+    for (const ruta of rutas) rmSync(ruta, { force: true });
+    return rutas;
   }
 
   static abrir(dbPath: string, opciones: OpcionesStore = {}): MemoryStore {

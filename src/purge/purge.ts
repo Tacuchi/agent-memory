@@ -12,6 +12,8 @@ export interface Purga {
   fecha: string;
   /** Entradas que apuntaban a la purgada por reemplazo y quedaron sin esa referencia. */
   referenciasLimpiadas: number[];
+  /** Copias previas a una actualización de la base que se borraron porque guardaban la entrada. */
+  copiasBorradas: string[];
 }
 
 export function purgar(store: MemoryStore, id: number, logPath: string): Purga {
@@ -35,5 +37,7 @@ export function purgar(store: MemoryStore, id: number, logPath: string): Purga {
     appendFileSync(logPath, `${fecha}\tpurga\t${id}\n`, { mode: 0o600 });
     return afectadas.map((f) => f.id);
   });
-  return { id, fecha, referenciasLimpiadas };
+  // La copia previa a la última actualización todavía guarda la entrada: se borra con ella.
+  const copiasBorradas = store.borrarCopiasPrevias();
+  return { id, fecha, referenciasLimpiadas, copiasBorradas };
 }

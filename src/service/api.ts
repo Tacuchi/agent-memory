@@ -183,6 +183,8 @@ export class Api {
   }
 
   private indice(d: z.infer<typeof ESQUEMAS.indice>) {
+    // El servicio puede correr semanas sin reiniciarse: cada inicio de sesión también vence la copia previa.
+    this.store.vencerCopiasPrevias();
     const entradas = this.store.listar(aFiltros(undefined, d.contexto), 100_000);
     return armarIndice(entradas, d.tope ?? this.topeIndice);
   }

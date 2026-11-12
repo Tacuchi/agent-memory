@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { cargarConfig } from "../../src/config.js";
 import { OPERACIONES } from "../../src/service/api.js";
@@ -64,6 +65,22 @@ describe("agent-memory purge", () => {
     expect(log).not.toContain("Título a purgar");
     // Lo demás queda intacto.
     expect(rastro(ids.otra).entradas).toBe(1);
+  });
+
+  it("si la copia previa a la última actualización sigue en disco, la purga la borra y lo dice", async () => {
+    const copia = join(dirname(cargarConfig(e.env).dbPath), "copia-previa-esquema-6.db");
+    writeFileSync(copia, `copia con ${CONTENIDO}`);
+    const r = await correr(e, ["purge", String(ids.objetivo), "--confirmar", String(ids.objetivo)]);
+    expect(r.code, r.stderr).toBe(0);
+    expect(existsSync(copia)).toBe(false);
+    expect(r.stdout).toContain("También se borró la copia previa");
+    expect(r.stdout).toContain("copia-previa-esquema-6.db");
+  });
+
+  it("sin copia previa, la purga no la menciona", async () => {
+    const r = await correr(e, ["purge", String(ids.objetivo), "--confirmar", String(ids.objetivo)]);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).not.toContain("copia previa");
   });
 
   it("purgar una entrada que reemplazó a otra limpia la referencia sin tocar el resto", async () => {
