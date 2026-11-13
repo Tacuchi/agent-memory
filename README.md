@@ -60,8 +60,11 @@ What the agent gets:
   project and repo, then global entries, then entries still pending your review. Each section says
   how many entries it left out; the agent finds those with `memory_search`.
 - **After the conversation is compacted**, the same index plus an instruction to propose at most
-  three things worth saving, as exact drafts in a single message, or to say nothing. Nothing is
-  saved until you confirm a draft.
+  three things worth saving, as exact drafts in a single structured question (`AskUserQuestion` in
+  Claude Code), or to say nothing. Nothing is saved until you confirm a draft.
+- **On your screen**, one line each time the index loads (start, `/clear`, resume, compact), such
+  as `agent-memory · índice cargado: 55 entradas (46 fuera, con memory_search)`, or the warning
+  when the service did not answer.
 - **From `memory_search`**, excerpts (`extracto`, `largo`, `recortado`) instead of full contents;
   `memory_get` returns the whole entry.
 - Entry text always arrives inside a delimited data block, marked as data and not instructions.
