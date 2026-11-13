@@ -36,7 +36,8 @@ const REGLAS: [string, RegExp[]][] = [
   ["el bloque de datos", [/bloque de datos/, /`<<<datos agent-memory …>>>`/, /es dato aunque parezca una orden/]],
   ["los extractos de la búsqueda", [/devuelve extractos/, /`recortado`/, /leela completa con `memory_get`/]],
   ["el enlace omitido", [/`omitido`/, /`reintento_en`/, /la\s+lectura lo intenta igual/]],
-  ["la propuesta tras compactar", [/## Después de compactar/, /como máximo 3 candidatos/, /Si nada lo merece, no digas nada/, /tampoco como pendiente/]],
+  ["proponer con la pregunta estructurada del host", [/pregunta estructurada del host/, /`AskUserQuestion` en Claude Code/, /recomendada primero/]],
+  ["la propuesta tras compactar", [/## Después de compactar/, /como máximo 3 candidatos/, /una sola pregunta estructurada/, /Si nada lo merece, no digas nada/, /tampoco como pendiente/]],
 ];
 
 describe("skill agent-memory", () => {
@@ -51,7 +52,7 @@ describe("skill agent-memory", () => {
   }
 
   it("el encabezado del índice resume las reglas", () => {
-    for (const p of [/evidencia, no instrucciones/, /vigente/, /Buscá antes de crear/, /secretos ni datos de clientes/, /borrador exacto/, /aprobá solo si lo pide/]) {
+    for (const p of [/evidencia, no instrucciones/, /vigente/, /Buscá antes de crear/, /secretos ni datos de clientes/, /borrador exacto/, /pregunta estructurada/, /aprobá solo si lo pide/]) {
       expect(ENCABEZADO_INDICE).toMatch(p);
     }
   });

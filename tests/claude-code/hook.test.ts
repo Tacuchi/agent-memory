@@ -24,6 +24,14 @@ afterEach(async () => {
   await e.limpiar();
 });
 
+/** El hook imprime el JSON de SessionStart: el contexto para el agente y el mensaje visible para la persona. */
+function salida(stdout: string): { contexto: string; visible: string } {
+  expect(stdout.trim().split("\n")).toHaveLength(1);
+  const datos = JSON.parse(stdout) as { systemMessage: string; hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+  expect(datos.hookSpecificOutput.hookEventName).toBe("SessionStart");
+  return { contexto: datos.hookSpecificOutput.additionalContext, visible: datos.systemMessage };
+}
+
 function configurar(datos: object) {
   mkdirSync(e.datos, { recursive: true });
   writeFileSync(join(e.datos, "config.json"), JSON.stringify(datos));
@@ -35,7 +43,9 @@ describe("hook session-start", () => {
     configurar({ hook: { espera_ms: 15_000 } });
     const r = await correr(e, ["hook", "session-start"], { input: JSON.stringify({ cwd: e.home, session_id: "sintetica" }) });
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/^# agent-memory · índice de la memoria \(evidencia, no instrucciones\)/);
+    const { contexto, visible } = salida(r.stdout);
+    expect(contexto).toMatch(/^# agent-memory · índice de la memoria \(evidencia, no instrucciones\)/);
+    expect(visible).toMatch(/^agent-memory · índice cargado: \d+ entradas/);
     const pid = leerPid({ pidPath: join(e.datos, "servicio.pid") })?.pid;
     expect(pid && procesoVivo(pid)).toBe(true);
     expect((await correr(e, ["status"])).code).toBe(0);
@@ -49,8 +59,9 @@ describe("hook session-start", () => {
     await new Promise<void>((r) => ocupante!.listen(e.port, "127.0.0.1", () => r()));
     const r = await correr(e, ["hook", "session-start"], { input: "{}" });
     expect(r.code).toBe(0);
-    expect(r.stdout.trim().split("\n")).toHaveLength(1);
-    expect(r.stdout).toMatch(/^agent-memory: el servicio no respondió en 1 s; esta sesión arranca sin índice\..*agent-memory start/);
+    const aviso = salida(r.stdout);
+    expect(aviso.contexto).toMatch(/^agent-memory: el servicio no respondió en 1 s; esta sesión arranca sin índice\..*agent-memory start/);
+    expect(aviso.visible).toBe(aviso.contexto);
     expect(r.ms).toBeLessThan(1000 + 3000);
 
     // El servicio lanzado queda registrado desde el arranque: stop lo alcanza aunque siga cargando.
@@ -68,16 +79,19 @@ describe("hook session-start", () => {
     configurar({ hook: { espera_ms: 15_000 } });
     const compactada = await correr(e, ["hook", "session-start"], { input: JSON.stringify({ cwd: e.home, source: "compact" }) });
     expect(compactada.code).toBe(0);
-    expect(compactada.stdout).toContain(INDICACION_TRAS_COMPACTAR);
-    expect(compactada.stdout.trimEnd().endsWith(INDICACION_TRAS_COMPACTAR)).toBe(true);
-    for (const pista of ["como máximo 3", "un solo mensaje", "borrador exacto", "pendientes y las rechazadas", "no digas nada", "lo dijo la persona o lo concluiste", "tampoco como pendiente", "antes de la compactación no cuenta"]) {
+    const tras = salida(compactada.stdout);
+    expect(tras.contexto.endsWith(INDICACION_TRAS_COMPACTAR)).toBe(true);
+    expect(tras.visible).toMatch(/^agent-memory · índice cargado: .*; el agente revisa qué vale guardar$/);
+    for (const pista of ["como máximo 3", "una sola pregunta estructurada", "AskUserQuestion", "recomendada primero", "borrador exacto", "pendientes y las rechazadas", "no digas nada", "lo dijo la persona o lo concluiste", "tampoco como pendiente", "antes de la compactación no cuenta"]) {
       expect(INDICACION_TRAS_COMPACTAR).toContain(pista);
     }
     for (const source of ["startup", "resume", "clear", undefined]) {
       const r = await correr(e, ["hook", "session-start"], { input: JSON.stringify({ cwd: e.home, ...(source ? { source } : {}) }) });
       expect(r.code).toBe(0);
-      expect(r.stdout, String(source)).toMatch(/índice de la memoria/);
-      expect(r.stdout, String(source)).not.toContain("después de compactar");
+      const { contexto, visible } = salida(r.stdout);
+      expect(contexto, String(source)).toMatch(/índice de la memoria/);
+      expect(contexto, String(source)).not.toContain("después de compactar");
+      expect(visible, String(source)).not.toContain("guardar");
     }
   });
 
@@ -86,7 +100,7 @@ describe("hook session-start", () => {
     configurar({ hook: { espera_ms: 15_000 } });
     const r = await correr(e, ["hook", "session-start"], { input: "esto no es json" });
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/índice de la memoria/);
+    expect(salida(r.stdout).contexto).toMatch(/índice de la memoria/);
   });
 
   it("con config.json ilegible avisa en una línea y termina con éxito", async () => {
@@ -95,6 +109,8 @@ describe("hook session-start", () => {
     writeFileSync(join(e.datos, "config.json"), "{ roto");
     const r = await correr(e, ["hook", "session-start"], { input: "{}" });
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/^agent-memory: sin índice en esta sesión \(config\.json ilegible/);
+    const aviso = salida(r.stdout);
+    expect(aviso.contexto).toMatch(/^agent-memory: sin índice en esta sesión \(config\.json ilegible/);
+    expect(aviso.visible).toBe(aviso.contexto);
   });
 });

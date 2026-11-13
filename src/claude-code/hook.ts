@@ -4,8 +4,8 @@ import { resolverContexto } from "../context.js";
 import { INDICACION_TRAS_COMPACTAR, type Indice } from "../indice/indice.js";
 import { arrancarSeparado } from "../service/daemon.js";
 
-// Hook `SessionStart` de Claude Code: imprime el índice del contexto de la
-// sesión, o una línea de aviso. Nunca bloquea ni falla: termina con éxito pase lo que pase.
+// Hook `SessionStart` de Claude Code: entrega el índice del contexto de la sesión, o una línea de
+// aviso, y una línea visible para la persona. Nunca bloquea ni falla: termina con éxito pase lo que pase.
 
 export interface EntradaHook {
   cwd?: string;
@@ -13,7 +13,13 @@ export interface EntradaHook {
   source?: string;
 }
 
-export async function hookSessionStart(entrada: EntradaHook, env: NodeJS.ProcessEnv = process.env): Promise<string> {
+/** Lo que el hook entrega: el contexto para el agente y la línea que la persona ve en pantalla. */
+export interface SalidaHook {
+  contexto: string;
+  visible: string;
+}
+
+export async function hookSessionStart(entrada: EntradaHook, env: NodeJS.ProcessEnv = process.env): Promise<SalidaHook> {
   let esperaMs = 2000;
   try {
     const config = cargarConfig(env);
@@ -24,18 +30,40 @@ export async function hookSessionStart(entrada: EntradaHook, env: NodeJS.Process
       if (!arranque.salud) return avisoSinServicio(esperaMs);
       const indice = await new ClienteServicio(config).llamar<Indice>("indice", { contexto, tope: config.topeIndice });
       // Solo tras compactar: al iniciar, reanudar, limpiar o bifurcar no hay nada nuevo que proponer guardar.
-      return entrada.source === "compact" ? `${indice.texto}\n\n${INDICACION_TRAS_COMPACTAR}` : indice.texto;
+      const compactada = entrada.source === "compact";
+      return {
+        contexto: compactada ? `${indice.texto}\n\n${INDICACION_TRAS_COMPACTAR}` : indice.texto,
+        visible: lineaVisible(indice, compactada),
+      };
     })();
     // Tope duro: aunque algo se cuelgue, la sesión arranca.
     return await Promise.race([trabajo, demora(esperaMs + 2000).then(() => avisoSinServicio(esperaMs))]);
   } catch (error) {
-    return `agent-memory: sin índice en esta sesión (${(error as Error).message}); revisá con «agent-memory doctor».`;
+    return aviso(`agent-memory: sin índice en esta sesión (${(error as Error).message}); revisá con «agent-memory doctor».`);
   }
 }
 
-function avisoSinServicio(esperaMs: number): string {
+/** El JSON que Claude Code espera de un hook SessionStart: `systemMessage` se ve, `additionalContext` lo recibe el agente. */
+export function jsonHook(salida: SalidaHook): string {
+  return JSON.stringify({
+    systemMessage: salida.visible,
+    hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: salida.contexto },
+  });
+}
+
+function lineaVisible(indice: Indice, compactada: boolean): string {
+  const fuera = indice.fuera > 0 ? ` (${indice.fuera} fuera, con memory_search)` : "";
+  return `agent-memory · índice cargado: ${indice.incluidas} entradas${fuera}${compactada ? "; el agente revisa qué vale guardar" : ""}`;
+}
+
+/** Un aviso lo ven los dos: el agente para no inventar, la persona para saber que la memoria no está. */
+function aviso(texto: string): SalidaHook {
+  return { contexto: texto, visible: texto };
+}
+
+function avisoSinServicio(esperaMs: number): SalidaHook {
   const segundos = (esperaMs / 1000).toLocaleString("es");
-  return `agent-memory: el servicio no respondió en ${segundos} s; esta sesión arranca sin índice. Las herramientas memory_* responden cuando el servicio esté arriba («agent-memory start»).`;
+  return aviso(`agent-memory: el servicio no respondió en ${segundos} s; esta sesión arranca sin índice. Las herramientas memory_* responden cuando el servicio esté arriba («agent-memory start»).`);
 }
 
 function demora(ms: number): Promise<void> {

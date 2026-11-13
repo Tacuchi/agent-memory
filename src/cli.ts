@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { desinstalarClaudeCode, instalarClaudeCode } from "./claude-code/install.js";
-import { hookSessionStart, leerEntradaHook } from "./claude-code/hook.js";
+import { hookSessionStart, jsonHook, leerEntradaHook } from "./claude-code/hook.js";
 import { ClienteServicio, ErrorServicio } from "./client.js";
 import { cargarConfig } from "./config.js";
 import { resolverContexto } from "./context.js";
@@ -490,8 +490,8 @@ async function uninstall(args: string[]): Promise<number> {
 
 async function hook(args: string[]): Promise<number> {
   if (args.join(" ") !== "session-start") return uso("uso: agent-memory hook session-start");
-  const texto = await hookSessionStart(await leerEntradaHook());
-  process.stdout.write(`${texto}\n`);
+  const salida = await hookSessionStart(await leerEntradaHook());
+  process.stdout.write(`${jsonHook(salida)}\n`);
   return 0;
 }
 

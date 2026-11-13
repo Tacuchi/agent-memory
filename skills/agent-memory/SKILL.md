@@ -62,9 +62,10 @@ encuentran con `memory_search`. El detalle se pide con `memory_get`.
 
 - Si al retomar tras una compactación recibís la indicación de agent-memory, revisá si quedó
   establecido algo que otra sesión va a necesitar.
-- Si nada lo merece, no digas nada. Si algo lo merece, proponé como máximo 3 candidatos en un
-  solo mensaje, cada uno como borrador exacto con su tipo y su ámbito, buscando antes si ya existe
-  (también entre pendientes y rechazadas) y diciendo si lo dijo la persona o lo concluiste vos.
+- Si nada lo merece, no digas nada. Si algo lo merece, proponé como máximo 3 candidatos
+  en una sola pregunta estructurada, cada uno como borrador exacto con su tipo y su ámbito,
+  buscando antes si ya existe (también entre pendientes y rechazadas) y diciendo si lo dijo la
+  persona o lo concluiste vos.
 - Son solo borradores: no guardes nada, tampoco como pendiente, hasta que la persona confirme ese
   borrador exacto. Un borrador mostrado antes de la compactación no cuenta como confirmado.
 
@@ -86,6 +87,9 @@ encuentran con `memory_search`. El detalle se pide con `memory_get`.
 
 - Cuando la persona pide guardar algo, llamá a `memory_create` (o `memory_edit`) con
   `borrador: true` y mostrale el borrador exacto que devuelve, con tipo y ámbito.
+- Pedí la confirmación con la pregunta estructurada del host (`AskUserQuestion` en Claude Code),
+  con la opción recomendada primero (por ejemplo: guardar tal cual, ajustar, descartar) y el
+  borrador visible en la pregunta. En prosa solo si el host no la tiene.
 - Si la persona lo confirma tal cual, guardalo pasando la `huella` del borrador: nace validado.
   Si cambia algo, mostrá el borrador nuevo.
 - Lo que guardás por iniciativa propia nace pendiente: la persona lo valida en la web.
