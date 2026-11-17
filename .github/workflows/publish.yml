@@ -47,13 +47,15 @@ jobs:
           echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
           echo "imagen=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/agent-memory-relay" >> "$GITHUB_OUTPUT"
       # npm puede tardar unos minutos en servir una versión recién publicada: el Dockerfile la instala desde ahí.
-      - name: esperar a que npm sirva la versión
+      # `npm view` ya ve la versión cuando el tarball todavía da 404, así que se espera al tarball mismo.
+      - name: esperar a que npm sirva el tarball
         run: |
-          for intento in $(seq 1 30); do
-            if npm view "@tacuchi/agent-memory@${{ steps.datos.outputs.version }}" version >/dev/null 2>&1; then exit 0; fi
+          tarball="https://registry.npmjs.org/@tacuchi/agent-memory/-/agent-memory-${{ steps.datos.outputs.version }}.tgz"
+          for intento in $(seq 1 60); do
+            if curl -sfI "$tarball" >/dev/null; then exit 0; fi
             sleep 10
           done
-          echo "npm no sirve @tacuchi/agent-memory@${{ steps.datos.outputs.version }} después de 5 minutos" >&2
+          echo "npm no sirve $tarball después de 10 minutos" >&2
           exit 1
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
