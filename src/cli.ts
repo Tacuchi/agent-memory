@@ -16,7 +16,9 @@ import { servirMcp } from "./mcp/server.js";
 import { arrancarServicio } from "./service/app.js";
 import { arrancarSeparado, borrarPid, detener, escribirPid, leerPid, salud } from "./service/daemon.js";
 import { purgar } from "./purge/purge.js";
-import { crearRele, leerClaveRele } from "./remoto/rele.js";
+import { leerDestino } from "./remoto/directo.js";
+import { formatearDirecto, formatearEstadoRemoto, type EstadoEnlaceCli } from "./remoto/estado-cli.js";
+import { CABECERA_IP_POR_DEFECTO, crearRele, leerCabeceraIp, leerClaveRele } from "./remoto/rele.js";
 import { MemoryStore } from "./store/store.js";
 import { version } from "./version.js";
 
@@ -47,18 +49,24 @@ agentes:
   uninstall claude-code     quita exactamente lo que agregó install
   hook session-start        hook SessionStart de Claude Code (lo llama Claude Code)
 
-enlace remoto (solo lectura entre dos instalaciones, por un relé):
+enlace remoto (solo lectura entre dos instalaciones, directo por Tailscale o la red local, o por un relé):
   remote code               abre la web en «Acceso remoto» para generar un código (lo hace la persona)
               [--imprimir]  solo muestra el enlace de un solo uso
   remote link <código> [--nombre <origen>] [--dispositivo <nombre>]
                             canjea un código de la otra instalación y la enlaza para leer; sin --nombre, el
-                            identificador sale del nombre de la otra PC (también se hace desde la web)
+                            identificador sale del nombre de la otra PC (también se hace desde la web). Una
+                            invitación directa (<código>@<dirección>:<puerto>) enlaza sin relé
   remote unlink <origen>    quita un enlace propio (deja de leer esa memoria); para volver a enlazar con el mismo nombre
+  remote direct <dirección>[:<puerto>] | off
+                            modo directo: escucha el canal remoto en esa dirección de esta PC (la de Tailscale o la
+                            de la red local; puerto 47822 si no se dice), solo con el acceso remoto encendido
   remote relay <url>        configura el relé (wss://…); la clave se lee por stdin
   remote status             estado del acceso remoto, dispositivos y enlaces, sin secretos
   relay                     corre el relé del enlace remoto (va detrás de HTTPS)
-        [--puerto N] [--host <dir>] [--clave-archivo <ruta>]
-                            la clave sale de AGENT_MEMORY_RELAY_KEY o de un archivo 0600, nunca de un argumento
+        [--puerto N] [--host <dir>] [--clave-archivo <ruta>] [--cabecera-ip <nombre>|ninguna]
+                            la clave sale de AGENT_MEMORY_RELAY_KEY o de un archivo 0600, nunca de un argumento;
+                            la IP del cliente, de la cabecera que fija el proxy de delante (cf-connecting-ip por
+                            defecto, o AGENT_MEMORY_RELAY_IP_HEADER); limita los intentos con clave equivocada por IP
 
   --version                 muestra la versión
 
@@ -207,17 +215,19 @@ async function relay(args: string[]): Promise<number> {
     args,
     allowPositionals: true,
     strict: false,
-    options: { puerto: { type: "string" }, host: { type: "string" }, "clave-archivo": { type: "string" } },
+    options: { puerto: { type: "string" }, host: { type: "string" }, "clave-archivo": { type: "string" }, "cabecera-ip": { type: "string" } },
   });
-  const desconocidas = Object.keys(values).filter((k) => !["puerto", "host", "clave-archivo"].includes(k));
+  const desconocidas = Object.keys(values).filter((k) => !["puerto", "host", "clave-archivo", "cabecera-ip"].includes(k));
   if (desconocidas.includes("clave")) return uso("la clave del relé no se pasa por argumento: usá AGENT_MEMORY_RELAY_KEY o --clave-archivo");
   if (desconocidas.length) return uso(`opción desconocida: --${desconocidas[0]}`);
   if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
   const puerto = values.puerto === undefined ? 8787 : Number(values.puerto);
   if (!Number.isInteger(puerto) || puerto < 0 || puerto > 65535) return uso(`puerto inválido: ${String(values.puerto)}`);
   let clave: string;
+  let cabeceraIp: string | null | undefined;
   try {
     clave = leerClaveRele(process.env, values["clave-archivo"] as string | undefined);
+    cabeceraIp = leerCabeceraIp((values["cabecera-ip"] as string | undefined) ?? process.env.AGENT_MEMORY_RELAY_IP_HEADER);
   } catch (error) {
     process.stderr.write(`${(error as Error).message}\n`);
     return 1;
@@ -232,8 +242,9 @@ async function relay(args: string[]): Promise<number> {
     process.stderr.write("el panel necesita las dos variables: AGENT_MEMORY_RELAY_ACCESS_TEAM y AGENT_MEMORY_RELAY_ACCESS_AUD\n");
     return 1;
   }
-  const rele = await crearRele({ clave, puerto, host, ...(equipo && aud ? { acceso: { equipo, aud } } : {}) });
+  const rele = await crearRele({ clave, puerto, host, ...(cabeceraIp !== undefined ? { cabeceraIp } : {}), ...(equipo && aud ? { acceso: { equipo, aud } } : {}) });
   process.stderr.write(`agent-memory relay ${version()} escuchando en ${rele.url.replace(/^ws/, "http")}\n`);
+  process.stderr.write(`IP del cliente: ${cabeceraIp === null ? "la del socket" : `cabecera ${cabeceraIp ?? CABECERA_IP_POR_DEFECTO}`}\n`);
   process.stderr.write(equipo ? `panel en /dashboard detrás de Cloudflare Access (equipo ${equipo})\n` : "panel apagado: faltan AGENT_MEMORY_RELAY_ACCESS_TEAM y AGENT_MEMORY_RELAY_ACCESS_AUD\n");
   await new Promise<void>((resolve) => {
     process.once("SIGINT", () => resolve());
@@ -288,7 +299,9 @@ async function abrir(args: string[], ir?: "remoto"): Promise<number> {
 async function remote(args: string[]): Promise<number> {
   const [sub, ...resto] = args;
   if (sub === "code") return abrir(resto, "remoto");
-  if (sub !== "status" && sub !== "relay" && sub !== "link" && sub !== "unlink") return uso("uso: agent-memory remote code | link <código> [--nombre <origen>] | unlink <origen> | relay <url> | status");
+  if (sub !== "status" && sub !== "relay" && sub !== "direct" && sub !== "link" && sub !== "unlink") {
+    return uso("uso: agent-memory remote code | link <código> [--nombre <origen>] | unlink <origen> | direct <dirección>[:<puerto>] | direct off | relay <url> | status");
+  }
   const { values, positionals } = parseArgs({ args: resto, allowPositionals: true, options: { nombre: { type: "string" }, dispositivo: { type: "string" } } });
   const config = cargarConfig();
   const arranque = await arrancarSeparado(config, ESPERA_START_MS);
@@ -307,6 +320,13 @@ async function remote(args: string[]): Promise<number> {
       if (positionals.length !== 1) return uso("uso: agent-memory remote unlink <origen>");
       await cliente.llamar("enlace_quitar", { origen: positionals[0] });
       return salida(`enlace «${positionals[0]}» quitado: ya no se lee esa memoria`);
+    }
+    if (sub === "direct") {
+      if (positionals.length !== 1) return uso("uso: agent-memory remote direct <dirección>[:<puerto>] | off   (por ejemplo: remote direct 100.101.102.103)");
+      const texto = positionals[0] as string;
+      const destino = texto === "off" ? null : (leerDestino(texto) ?? { host: texto, puerto: undefined });
+      const r = await cliente.llamar<{ directo: EstadoEnlaceCli["directo"] }>("enlace_directo", destino ? { direccion: destino.host, ...(destino.puerto ? { puerto: destino.puerto } : {}) } : { direccion: null });
+      return salida(formatearDirecto(r.directo));
     }
     if (sub === "relay") {
       if (positionals.length !== 1) return uso("uso: agent-memory remote relay <url>   (la clave del relé, por stdin)");
@@ -330,28 +350,6 @@ async function remote(args: string[]): Promise<number> {
     }
     throw error;
   }
-}
-
-interface EstadoEnlaceCli {
-  interruptor: boolean;
-  rele: { url: string } | null;
-  escuchando: number;
-  codigo_vigente: boolean;
-  dispositivos: { nombre: string; estado: string; vence_en: string }[];
-  enlaces: { origen: string; vence_en: string }[];
-}
-
-function formatearEstadoRemoto(e: EstadoEnlaceCli): string {
-  const lineas = [
-    `acceso remoto: ${e.interruptor ? "encendido" : "apagado"}${e.interruptor ? ` (escuchando ${e.escuchando} buzón/es)` : ""}`,
-    `relé: ${e.rele ? e.rele.url : "sin configurar («agent-memory remote relay <url>»)"}`,
-    `código vigente: ${e.codigo_vigente ? "sí" : "no"}`,
-    `dispositivos que leen esta memoria: ${e.dispositivos.length || "ninguno"}`,
-    ...e.dispositivos.map((d) => `  - ${d.nombre}: ${d.estado}, vence ${d.vence_en.slice(0, 10)}`),
-    `enlaces para leer otras memorias: ${e.enlaces.length || "ninguno"}`,
-    ...e.enlaces.map((x) => `  - ${x.origen}: vence ${x.vence_en.slice(0, 10)}`),
-  ];
-  return lineas.join("\n");
 }
 
 async function leerStdin(): Promise<string> {

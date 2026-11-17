@@ -16,6 +16,7 @@ const NUEVAS = [
   ["remoto_rele", { url: "wss://relay.example.net", clave: "x".repeat(30) }],
   ["remoto_rele_probar", {}],
   ["remoto_ambitos", {}],
+  ["remoto_directo", { direccion: null }],
 ] as const;
 
 describe("operaciones remotas de la web", () => {

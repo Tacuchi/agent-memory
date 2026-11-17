@@ -226,10 +226,10 @@ describe("pantalla «Acceso remoto»", () => {
     const f = await montar();
     fireEvent.click(within(leo_("desktop-casa")).getByRole("button", { name: "Pegar el código de desktop-casa" }));
     const form = await screen.findByRole("form", { name: "Leer su memoria" });
-    fireEvent.change(within(form).getByLabelText("Código de la otra PC"), { target: { value: "USADO" } });
+    fireEvent.change(within(form).getByLabelText("Código o invitación de la otra PC"), { target: { value: "USADO" } });
     fireEvent.submit(form);
     expect((await within(form).findByRole("alert")).textContent).toContain("ese código ya se usó");
-    fireEvent.change(within(form).getByLabelText("Código de la otra PC"), { target: { value: "WXYZ-1234" } });
+    fireEvent.change(within(form).getByLabelText("Código o invitación de la otra PC"), { target: { value: "WXYZ-1234" } });
     fireEvent.submit(form);
     expect((await within(form).findByRole("status")).textContent).toBe("Ahora leés «desktop-casa» como «desktop-casa».");
     expect(f.llamadas).toContainEqual(["remoto_canjear", { codigo: "WXYZ-1234" }]);
@@ -375,5 +375,95 @@ describe("pantalla «Acceso remoto»", () => {
     render(<Remoto cliente={viejo} />);
     expect((await screen.findByRole("alert")).textContent).toContain("versión anterior");
     expect(llamadas).not.toContain("remoto_rele_probar");
+  });
+});
+
+const TS = { direccion: "100.101.102.103", interfaz: "utun4", tailscale: true };
+const LAN = { direccion: "192.168.1.20", interfaz: "en0", tailscale: false };
+const INVITACION = "ABCD-EFGH-JKMN-PQRS@100.101.102.103:47822";
+
+/** El cliente falso con la conexión directa: estado, direcciones, remoto_directo, invitación y enlaces con su modo. */
+function clienteDirecto(inicio: { rele?: { url: string } | null; directo?: object } = {}) {
+  const f = clienteFalso({ rele: inicio.rele === undefined ? null : inicio.rele });
+  let directo: any = { direccion: null, puerto: 47822, estado: "apagado", motivo: null, ...inicio.directo };
+  f.conexiones.find((c) => c.huella === "h-qtc").leo.direccion = "100.64.0.9:47822";
+  f.conexiones.find((c) => c.huella === "h-taller").leo.direccion = null;
+  const base = f.cliente;
+  const cliente: Cliente = async <T,>(op: string, cuerpo: object = {}): Promise<T> => {
+    const c = cuerpo as any;
+    if (op === "remoto_estado") return { ...(await base<object>(op, cuerpo)), directo, direcciones: [TS, LAN] } as T;
+    if (op === "remoto_directo") {
+      f.llamadas.push([op, cuerpo]);
+      directo = c.direccion ? { direccion: c.direccion, puerto: c.puerto ?? 47822, estado: "escuchando", motivo: null } : { ...directo, direccion: null, estado: "apagado" };
+      return { directo } as T;
+    }
+    if (op === "remoto_codigo") return { ...(await base<object>(op, cuerpo)), invitacion: directo.estado === "escuchando" ? INVITACION : null } as T;
+    return base<T>(op, cuerpo);
+  };
+  return { ...f, cliente };
+}
+
+describe("conexión directa en «Acceso remoto»", () => {
+  it("sin relé ni dirección, la barra ofrece las direcciones con Tailscale primero y manda remoto_directo", async () => {
+    const f = await montar(clienteDirecto());
+    const barra = screen.getByRole("group", { name: "Esta PC" });
+    const form = within(barra).getByRole("form", { name: "Configurar la conexión directa" });
+    const opciones = within(form).getAllByRole("option").map((o) => o.textContent);
+    expect(opciones).toEqual(["Tailscale · 100.101.102.103", "192.168.1.20 · en0"]);
+    fireEvent.submit(form);
+    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_directo", { direccion: "100.101.102.103", puerto: 47822 }]));
+    expect(await within(barra).findByText("escuchando")).toBeTruthy();
+    expect(within(barra).getByText("100.101.102.103:47822").tagName).toBe("CODE");
+    expect(within(barra).queryByRole("form", { name: "Configurar la conexión directa" })).toBeNull();
+  });
+
+  it("sin escuchar dice por qué; con relé y sin dirección queda plegada", async () => {
+    await montar(clienteDirecto({ directo: { direccion: "100.101.102.103", estado: "no_disponible", motivo: "esta PC no tiene ahora la dirección 100.101.102.103" } }));
+    const barra = screen.getByRole("group", { name: "Esta PC" });
+    expect(within(barra).getByText("sin escuchar")).toBeTruthy();
+    expect(within(barra).getByText("Esta PC no tiene ahora la dirección 100.101.102.103.")).toBeTruthy();
+    expect(within(barra).getByRole("button", { name: "Apagar" })).toBeTruthy();
+    cleanup();
+
+    await montar(clienteDirecto({ rele: { url: "wss://rele.ejemplo" } }));
+    const otra = screen.getByRole("group", { name: "Esta PC" });
+    expect(within(otra).queryByRole("form", { name: "Configurar la conexión directa" })).toBeNull();
+    fireEvent.click(within(otra).getByRole("button", { name: "Configurar" }));
+    expect(within(otra).getByRole("form", { name: "Configurar la conexión directa" })).toBeTruthy();
+  });
+
+  it("generar código muestra la invitación; con relé deja elegir el modo con la directa primero", async () => {
+    await montar(clienteDirecto({ rele: { url: "wss://rele.ejemplo" }, directo: { direccion: "100.101.102.103", estado: "escuchando" } }));
+    fireEvent.click(within(seccion()).getByRole("button", { name: "+ Conectar otra PC" }));
+    const compartir = await screen.findByRole("group", { name: "Compartirle tu memoria" });
+    await within(compartir).findByRole("checkbox", { name: /Global/ });
+    fireEvent.click(within(compartir).getByRole("button", { name: "Generar código" }));
+    expect((await screen.findByLabelText("Invitación directa")).textContent).toBe(INVITACION);
+    const modo = screen.getByRole("radiogroup", { name: "Cómo se conecta la otra PC" });
+    expect((within(modo).getByRole("radio", { name: "Directa" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(`agent-memory remote link ${INVITACION}`)).toBeTruthy();
+    fireEvent.click(within(modo).getByRole("radio", { name: "Por relé" }));
+    expect(screen.getByLabelText("Código de enlace").textContent).toBe("ABCD-EFGH-JKMN-PQRS");
+  });
+
+  it("sin relé, el código trae solo la invitación, sin elegir modo", async () => {
+    await montar(clienteDirecto({ directo: { direccion: "100.101.102.103", estado: "escuchando" } }));
+    fireEvent.click(within(seccion()).getByRole("button", { name: "+ Conectar otra PC" }));
+    const compartir = await screen.findByRole("group", { name: "Compartirle tu memoria" });
+    await within(compartir).findByRole("checkbox", { name: /Global/ });
+    fireEvent.click(within(compartir).getByRole("button", { name: "Generar código" }));
+    expect((await screen.findByLabelText("Invitación directa")).textContent).toBe(INVITACION);
+    expect(screen.queryByRole("radiogroup", { name: "Cómo se conecta la otra PC" })).toBeNull();
+  });
+
+  it("el canje acepta la invitación y cada tarjeta dice si lee directo o por relé", async () => {
+    const f = await montar(clienteDirecto());
+    expect(leo_("laptop-qtc").textContent).toContain("directa a 100.64.0.9:47822");
+    expect(leo_("mini-taller").textContent).toContain("por relé");
+    fireEvent.click(within(leo_("desktop-casa")).getByRole("button", { name: "Pegar el código de desktop-casa" }));
+    const form = await screen.findByRole("form", { name: "Leer su memoria" });
+    fireEvent.change(within(form).getByLabelText("Código o invitación de la otra PC"), { target: { value: ` ${INVITACION} ` } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(f.llamadas).toContainEqual(["remoto_canjear", { codigo: INVITACION }]));
   });
 });

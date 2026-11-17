@@ -2,9 +2,10 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { mensajeError, type Cliente } from "../../api";
 import { Aviso } from "../comunes";
 import { alEscape, Senal, useAccion } from "./comun";
-import type { Estado, PruebaRele } from "./tipos";
+import type { DireccionPc, Directo, Estado, PruebaRele } from "./tipos";
 
-// Barra «Esta PC»: cómo se llama esta PC, si su memoria está abierta, por qué relé pasa y si el panel la ve.
+// Barra «Esta PC»: cómo se llama esta PC, si su memoria está abierta, dónde escucha la conexión directa, por qué relé
+// pasa y si el panel la ve.
 
 /** El nombre visible no puede pasar de lo que guarda el servicio (LARGO_NOMBRE_PC). */
 const LARGO_NOMBRE = 60;
@@ -13,6 +14,12 @@ const PANEL: Record<NonNullable<Estado["panel"]>, { tono: "validada" | "pendient
   conectado: { tono: "validada", texto: "conectado" },
   conectando: { tono: "pendiente", texto: "conectando…" },
   inactivo: { tono: "tenue", texto: "inactivo" },
+};
+
+const DIRECTO: Record<Directo["estado"], { tono: "validada" | "rechazada" | "tenue"; texto: string }> = {
+  escuchando: { tono: "validada", texto: "escuchando" },
+  no_disponible: { tono: "rechazada", texto: "sin escuchar" },
+  apagado: { tono: "tenue", texto: "en pausa" },
 };
 
 const PRUEBA: Record<Exclude<PruebaRele, "sin_rele">, { tono: "validada" | "rechazada"; texto: string }> = {
@@ -86,6 +93,8 @@ export function EstaPc({
           <Aviso texto={acceso.hecho} tipo="ok" />
         </div>
 
+        <ConexionDirecta estado={estado} cliente={cliente} recargar={recargar} />
+
         <Rele estado={estado} cliente={cliente} recargar={recargar} />
 
         <div className="celda">
@@ -153,6 +162,139 @@ function NombrePc({ nombre, guardar }: { nombre: string; guardar: (nombre: strin
       <button type="button" onClick={() => setEditando(false)}>
         Cancelar
       </button>
+    </form>
+  );
+}
+
+/** `host:puerto`, con la IPv6 entre corchetes. */
+function hostPuerto(direccion: string, puerto: number): string {
+  return direccion.includes(":") ? `[${direccion}]:${puerto}` : `${direccion}:${puerto}`;
+}
+
+/**
+ * Conexión directa: la dirección de esta PC (Tailscale o red local) donde escucha el canal cifrado, sin relé. Sin
+ * configurar, el formulario queda abierto solo si tampoco hay relé: es el camino por defecto para empezar.
+ */
+function ConexionDirecta({ estado, cliente, recargar }: { estado: Estado; cliente: Cliente; recargar: () => Promise<void> }) {
+  const [editando, setEditando] = useState(false);
+  const guardar = useAccion(recargar);
+  const d = estado.directo;
+  if (!d) {
+    return (
+      <div className="celda celda-directo">
+        <span className="rotulo">Conexión directa</span>
+        <span className="meta">—</span>
+      </div>
+    );
+  }
+  const direcciones = estado.direcciones ?? [];
+  const formulario = editando || (!d.direccion && !estado.rele);
+  const pausa = d.estado === "apagado" && d.direccion !== null;
+
+  return (
+    <div className="celda celda-directo">
+      <span className="rotulo">Conexión directa</span>
+      {d.direccion && (
+        <span className="rele-linea">
+          <code className="valor-url">{hostPuerto(d.direccion, d.puerto)}</code>
+          <Senal tono={DIRECTO[d.estado].tono}>{DIRECTO[d.estado].texto}</Senal>
+        </span>
+      )}
+      {pausa && <span className="meta">Escucha cuando «Compartir» está encendido.</span>}
+      {d.estado === "no_disponible" && d.motivo && <span className="meta">{`${d.motivo[0]?.toUpperCase() ?? ""}${d.motivo.slice(1)}.`}</span>}
+      {!d.direccion && !formulario && <span className="meta">Para PCs en tu tailnet o en la misma red, sin relé.</span>}
+      {!formulario && (
+        <span className="barra-accion compacta">
+          <button type="button" className="enlace azul" onClick={() => setEditando(true)}>
+            {d.direccion ? "Cambiar dirección" : "Configurar"}
+          </button>
+          {d.direccion && (
+            <button
+              type="button"
+              className="enlace azul"
+              disabled={guardar.ocupado}
+              onClick={() => void guardar.ejecutar(() => cliente("remoto_directo", { direccion: null }), "Conexión directa apagada")}
+            >
+              Apagar
+            </button>
+          )}
+        </span>
+      )}
+      {formulario && (
+        <FormularioDirecto
+          direcciones={direcciones}
+          actual={d}
+          ocupado={guardar.ocupado}
+          cancelar={editando ? () => setEditando(false) : null}
+          enviar={async (direccion, puerto) => {
+            const ok = await guardar.ejecutar(() => cliente("remoto_directo", { direccion, puerto }), `Conexión directa en ${hostPuerto(direccion, puerto)}`);
+            if (ok) setEditando(false);
+          }}
+        />
+      )}
+      <Aviso texto={guardar.error} />
+      <Aviso texto={guardar.hecho} tipo="ok" />
+    </div>
+  );
+}
+
+function FormularioDirecto({
+  direcciones,
+  actual,
+  enviar,
+  cancelar,
+  ocupado,
+}: {
+  direcciones: DireccionPc[];
+  actual: Directo;
+  enviar: (direccion: string, puerto: number) => Promise<void>;
+  cancelar: (() => void) | null;
+  ocupado: boolean;
+}) {
+  const inicial = direcciones.some((x) => x.direccion === actual.direccion) ? (actual.direccion as string) : (direcciones[0]?.direccion ?? "");
+  const [direccion, setDireccion] = useState(inicial);
+  const [puerto, setPuerto] = useState(String(actual.puerto));
+  const numero = Number(puerto);
+  const puertoValido = /^\d{4,5}$/.test(puerto) && numero >= 1024 && numero <= 65535;
+
+  if (direcciones.length === 0) {
+    return <p className="meta">Esta PC no tiene ahora una dirección de red para ofrecer. Con Tailscale aparece la suya.</p>;
+  }
+  return (
+    <form
+      className="form-rele"
+      aria-label="Configurar la conexión directa"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (direccion && puertoValido) void enviar(direccion, numero);
+      }}
+      onKeyDown={cancelar ? alEscape(cancelar) : undefined}
+    >
+      <label>
+        Dirección de esta PC
+        <select value={direccion} onChange={(e) => setDireccion(e.target.value)}>
+          {direcciones.map((x) => (
+            <option key={x.direccion} value={x.direccion}>
+              {x.tailscale ? `Tailscale · ${x.direccion}` : `${x.direccion} · ${x.interfaz}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Puerto
+        <input inputMode="numeric" maxLength={5} value={puerto} aria-invalid={!puertoValido} onChange={(e) => setPuerto(e.target.value.trim())} />
+      </label>
+      <div className="barra-accion">
+        <button type="submit" className="primario" disabled={!direccion || !puertoValido || ocupado}>
+          Usar esta dirección
+        </button>
+        {cancelar && (
+          <button type="button" onClick={cancelar}>
+            Cancelar
+          </button>
+        )}
+      </div>
+      <p className="meta">Sin relé, para PCs en tu tailnet de Tailscale o en la misma red. Solo escucha el canal cifrado, nunca la memoria entera.</p>
     </form>
   );
 }

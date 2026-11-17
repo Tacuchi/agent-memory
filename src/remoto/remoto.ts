@@ -5,6 +5,9 @@
  *   enlazado y el de cada código reciente; con el interruptor apagado no se conecta al relé. Por un enlace vigente
  *   responde solo `buscar`, `leer`, `listar` y `revisiones`, dentro del alcance del dispositivo, sin registrar uso; todo
  *   lo demás se rechaza. Cada lectura y cada rechazo quedan en el registro.
+ * - **Modo directo**: con el interruptor encendido y una dirección elegida, la dueña además escucha esos mismos buzones
+ *   en esa dirección (Tailscale o la red local), sin relé. La lectora que canjeó una invitación directa
+ *   (`<código>@<dirección>:<puerto>`) lee siempre por ahí; la que canjeó un código pelado, siempre por el relé.
  * - **Lectora**: canjea un código por una credencial (buzón propio y clave fijada de la dueña) y pide lecturas bajo
  *   demanda. Cada pedido es una sesión nueva (handshake, un pedido, una respuesta en un solo mensaje): revocar o
  *   vencer corta en el pedido siguiente, y una respuesta que no llega es `sin_respuesta`, nunca un vacío. Lo leído
@@ -22,8 +25,23 @@ import { desdeFila, type FilaEntrada } from "../store/rows.js";
 import { vistaEntrada, vistaRelacion, vistaResultado, vistaRevision } from "../service/views.js";
 import { abrirComoIniciador, abrirComoRespondedor, cargarIdentidad, ErrorCanal, type Identidad, type MotivoRechazo, type Transporte } from "./canal.js";
 import { generarCodigo, leerCodigo } from "./codigo.js";
-import { DatosRemotos, huellaDe, INTENTOS_CODIGO, type Dispositivo, type Enlace, type Pendiente } from "./datos.js";
-import { conectarControl, conectarRele, ErrorRele, type CanalControl } from "./transporte.js";
+import { DatosRemotos, huellaDe, INTENTOS_CODIGO, type Directo, type Dispositivo, type Enlace, type Pendiente } from "./datos.js";
+import {
+  abrirServidorDirecto,
+  direccionesDeLaPc,
+  formarInvitacion,
+  hostPuerto,
+  leerDestino,
+  leerInvitacion,
+  motivoDeEscucha,
+  PUERTO_DIRECTO_POR_DEFECTO,
+  validarDireccion,
+  validarPuerto,
+  type DireccionPc,
+  type ServidorDirecto,
+} from "./directo.js";
+import { LimiteIntentos } from "./limite.js";
+import { conectarControl, conectarDirecto, conectarRele, ErrorRele, type CanalControl } from "./transporte.js";
 import { version } from "../version.js";
 
 const ESCUCHA_SIN_PLAZO_MS = 24 * 3600_000;
@@ -60,6 +78,24 @@ function mensajeEstado(estado: string, origen: string, motivo: string | null): s
 export interface OpcionesRemoto {
   esperaMs?: number;
   env?: NodeJS.ProcessEnv;
+  /** Direcciones de esta PC para el modo directo; por defecto, las del sistema. Las pruebas inyectan las suyas. */
+  direcciones?: () => DireccionPc[];
+}
+
+/** Reintento del modo directo cuando su dirección falta: de 1 s, el doble cada vez, hasta 1 min. */
+const REINTENTO_DIRECTO_INICIAL_MS = 1000;
+const REINTENTO_DIRECTO_MAXIMO_MS = 60_000;
+
+interface EstadoDirecto {
+  /** `direccion|puerto` que se quiere escuchar ahora; null = apagado. */
+  clave: string | null;
+  servidor: ServidorDirecto | null;
+  estado: "apagado" | "escuchando" | "no_disponible";
+  motivo: string | null;
+  /** Código del sistema del último fallo al escuchar (`EADDRINUSE`, `EADDRNOTAVAIL`…). */
+  error: string | null;
+  reintento: NodeJS.Timeout | null;
+  pausa: number;
 }
 
 const filtrosRemotos = z
@@ -107,6 +143,11 @@ export class Remoto {
   readonly huella: string;
   private control: { activa: boolean; canal: CanalControl | null } | null = null;
   private informeProgramado: NodeJS.Timeout | null = null;
+  private readonly direcciones: () => DireccionPc[];
+  private readonly directo: EstadoDirecto = { clave: null, servidor: null, estado: "apagado", motivo: null, error: null, reintento: null, pausa: REINTENTO_DIRECTO_INICIAL_MS };
+  /** Las altas y bajas del servidor directo van de a una, en orden. */
+  private alineandoDirecto: Promise<void> = Promise.resolve();
+  private readonly limiteDirecto = new LimiteIntentos();
 
   constructor(
     private readonly store: MemoryStore,
@@ -118,6 +159,7 @@ export class Remoto {
     this.huella = huellaDe(this.identidad.publica);
     this.esperaMs = opciones.esperaMs ?? ESPERA_REMOTA_POR_DEFECTO_MS;
     this.env = opciones.env ?? process.env;
+    this.direcciones = opciones.direcciones ?? (() => direccionesDeLaPc());
     this.revision = setInterval(() => this.reconciliar(), REVISAR_ESCUCHAS_MS);
     this.revision.unref();
   }
@@ -128,6 +170,7 @@ export class Remoto {
     for (const buzon of [...this.escuchas.keys()]) this.dejarDeEscuchar(buzon);
     this.dejarControl();
     if (this.informeProgramado) clearTimeout(this.informeProgramado);
+    void this.alinearDirecto();
   }
 
   /** Buzones que la dueña escucha ahora (para diagnóstico y pruebas). */
@@ -148,8 +191,22 @@ export class Remoto {
       rele: rele ? { url: rele.url } : null,
       codigo: vigente ? { vence_en: vigente.venceEn, intentos_restantes: INTENTOS_CODIGO - vigente.intentos } : null,
       dispositivos: this.datos.dispositivos().map((d) => this.vistaDispositivo(d)),
-      enlaces: this.datos.enlaces().map((e) => ({ origen: e.origen, nombre: e.nombre, enlazado_en: e.creadoEn, vence_en: e.venceEn, usado_en: e.usadoEn })),
+      enlaces: this.datos.enlaces().map((e) => ({ origen: e.origen, nombre: e.nombre, enlazado_en: e.creadoEn, vence_en: e.venceEn, usado_en: e.usadoEn, direccion: e.direccion })),
+      directo: this.estadoDirecto(),
+      direcciones: this.direcciones(),
       ...this.conexiones(),
+    };
+  }
+
+  /** El modo directo como lo ve la persona: dónde, si escucha y, si no, por qué. */
+  estadoDirecto() {
+    const cfg = this.datos.directo();
+    const apagadoPorInterruptor = cfg !== null && !this.datos.interruptor();
+    return {
+      direccion: cfg?.direccion ?? null,
+      puerto: cfg?.puerto ?? PUERTO_DIRECTO_POR_DEFECTO,
+      estado: this.directo.estado,
+      motivo: apagadoPorInterruptor ? "el acceso remoto está apagado" : this.directo.motivo,
     };
   }
 
@@ -185,7 +242,7 @@ export class Remoto {
               revocado_en: d.revocadoEn,
             }
           : null,
-        leo: enlace ? { origen: enlace.origen, enlazado_en: enlace.creadoEn, usado_en: enlace.usadoEn, vence_en: enlace.venceEn } : null,
+        leo: enlace ? { origen: enlace.origen, enlazado_en: enlace.creadoEn, usado_en: enlace.usadoEn, vence_en: enlace.venceEn, direccion: enlace.direccion } : null,
         hoy: { leyo: suma(hoy.leyo), lei: hoy.lei.get(huella) ?? 0, rechazos: suma(hoy.rechazosDuena) + (hoy.rechazosLectora.get(huella) ?? 0) },
       };
     });
@@ -265,13 +322,44 @@ export class Remoto {
     this.informar();
   }
 
-  /** Código nuevo de 10 minutos y 5 intentos. El texto solo se devuelve aquí, una vez. */
-  nuevoCodigo(alcance: Alcance | null = null): { codigo: string; vence_en: string } {
+  /**
+   * Código nuevo de 10 minutos y 5 intentos. El texto solo se devuelve aquí, una vez. Con el modo directo escuchando
+   * viene también la invitación directa, que lleva la dirección de esta PC.
+   */
+  nuevoCodigo(alcance: Alcance | null = null): { codigo: string; vence_en: string; invitacion: string | null } {
     const c = generarCodigo();
     const fila = this.datos.crearCodigo(c.buzon, c.huella, alcance);
     this.secretos.set(c.buzon, c.secreto);
     this.reconciliar();
-    return { codigo: c.texto, vence_en: fila.venceEn };
+    const cfg = this.datos.directo();
+    const invitacion = cfg && this.directo.estado === "escuchando" ? formarInvitacion(c.texto, cfg.direccion, cfg.puerto) : null;
+    return { codigo: c.texto, vence_en: fila.venceEn, invitacion };
+  }
+
+  /**
+   * Configura el modo directo (`null` lo apaga). Escucha solo si además el acceso remoto está encendido. Un puerto
+   * ocupado no se guarda; una dirección que la PC no tiene ahora sí, y queda `no_disponible` hasta que aparezca.
+   */
+  async configurarDirecto(direccion: string | null, puerto?: number): Promise<ReturnType<Remoto["estadoDirecto"]>> {
+    const anterior = this.datos.directo();
+    if (direccion === null) {
+      this.datos.fijarDirecto(null);
+    } else {
+      const nuevo: Directo = {
+        direccion: validarDireccion(direccion, this.direcciones()),
+        puerto: validarPuerto(puerto ?? anterior?.puerto ?? PUERTO_DIRECTO_POR_DEFECTO),
+      };
+      this.datos.fijarDirecto(nuevo);
+    }
+    await this.alinearDirecto();
+    if (this.directo.estado === "no_disponible" && this.directo.error === "EADDRINUSE") {
+      const motivo = this.directo.motivo;
+      this.datos.fijarDirecto(anterior);
+      await this.alinearDirecto();
+      throw new ReglaError("puerto_ocupado", `${motivo}: elegí otro puerto`);
+    }
+    this.informar();
+    return this.estadoDirecto();
   }
 
   configurarRele(url: string, clave: string): void {
@@ -315,6 +403,7 @@ export class Remoto {
     }
     for (const buzon of [...this.escuchas.keys()]) if (!deseados.has(buzon)) this.dejarDeEscuchar(buzon);
     for (const [buzon, tipo] of deseados) if (!this.escuchas.has(buzon)) this.escuchar(buzon, tipo);
+    void this.alinearDirecto();
     // El canal de control con el panel: con relé y algo que informar (acceso encendido o enlaces).
     const quiereControl = Boolean(this.datos.rele()) && (this.datos.interruptor() || this.datos.enlaces().length > 0);
     if (quiereControl && !this.control) this.abrirControl();
@@ -492,14 +581,82 @@ export class Remoto {
     })();
   }
 
-  private async atenderCanje(t: Transporte, buzon: string): Promise<void> {
+  // ── Dueña: el modo directo ───────────────────────────────────────────────────
+
+  /** Alinea el servidor directo con el estado; las llamadas se encadenan para no abrir dos a la vez. */
+  private alinearDirecto(): Promise<void> {
+    this.alineandoDirecto = this.alineandoDirecto.then(() => this.alinearDirectoAhora()).catch(() => undefined);
+    return this.alineandoDirecto;
+  }
+
+  private async alinearDirectoAhora(): Promise<void> {
+    const cfg = this.cerrado || !this.datos.interruptor() ? null : this.datos.directo();
+    const clave = cfg ? `${cfg.direccion}|${cfg.puerto}` : null;
+    const d = this.directo;
+    if (clave === d.clave && (d.servidor || d.reintento)) return;
+    if (d.reintento) clearTimeout(d.reintento);
+    d.reintento = null;
+    if (d.servidor) {
+      const viejo = d.servidor;
+      d.servidor = null;
+      await viejo.cerrar();
+    }
+    d.clave = clave;
+    d.error = null;
+    if (!cfg) {
+      d.estado = "apagado";
+      d.motivo = null;
+      d.pausa = REINTENTO_DIRECTO_INICIAL_MS;
+      return;
+    }
+    try {
+      if (!this.direcciones().some((x) => x.direccion === cfg.direccion)) {
+        throw Object.assign(new Error("dirección ausente"), { code: "EADDRNOTAVAIL" });
+      }
+      d.servidor = await abrirServidorDirecto({
+        direccion: cfg.direccion,
+        puerto: cfg.puerto,
+        tipoDe: (buzon) => this.tipoDeBuzon(buzon),
+        atender: (tipo, buzon, t) => (tipo === "codigo" ? this.atenderCanje(t, buzon, this.esperaMs * 5) : this.atenderEnlace(t, buzon, this.esperaMs * 5)),
+        limite: this.limiteDirecto,
+      });
+      d.estado = "escuchando";
+      d.motivo = null;
+      d.pausa = REINTENTO_DIRECTO_INICIAL_MS;
+    } catch (error) {
+      // Nunca se escucha en otra dirección: se espera a que esta aparezca.
+      d.estado = "no_disponible";
+      d.motivo = motivoDeEscucha(error, cfg.direccion, cfg.puerto);
+      d.error = (error as NodeJS.ErrnoException).code ?? null;
+      d.reintento = setTimeout(() => {
+        d.reintento = null;
+        if (d.clave === clave) {
+          d.clave = null;
+          void this.alinearDirecto();
+        }
+      }, d.pausa);
+      d.reintento.unref();
+      d.pausa = Math.min(d.pausa * 2, REINTENTO_DIRECTO_MAXIMO_MS);
+    }
+  }
+
+  /** Lo que la dueña atiende en un buzón ahora: los mismos que escucharía por el relé. */
+  private tipoDeBuzon(buzon: string): "codigo" | "dispositivo" | null {
+    if (!this.datos.interruptor()) return null;
+    if (this.datos.dispositivos().some((d) => d.buzon === buzon)) return "dispositivo";
+    if (this.datos.codigosEscuchados().some((c) => c.buzon === buzon)) return "codigo";
+    return null;
+  }
+
+  /** Atiende un canje; true si la lectora probó el código. */
+  private async atenderCanje(t: Transporte, buzon: string, esperaPrimerMensajeMs = ESCUCHA_SIN_PLAZO_MS): Promise<boolean> {
     let codigoId: number | null = null;
     let sesion;
     try {
       sesion = await abrirComoRespondedor(t, {
         yo: this.identidad,
         modo: "emparejar",
-        esperaPrimerMensajeMs: ESCUCHA_SIN_PLAZO_MS,
+        esperaPrimerMensajeMs,
         esperaMs: this.esperaMs * 5,
         alLlegar: () => {
           const c = this.datos.codigoPorBuzon(buzon);
@@ -532,13 +689,14 @@ export class Remoto {
       // handshake de canje que no termina después de haber dado el secreto cuenta como secreto malo.
       const rechazadoAntes = error instanceof ErrorCanal && error.codigo === "rechazado";
       if (codigoId !== null && !rechazadoAntes) this.rechazo(null, "enlazar", null, "secreto_malo");
-      return;
+      return false;
     }
     try {
       const pedido = PEDIDO_ENLACE.safeParse(await sesion.recibir(this.esperaMs * 5));
       if (!pedido.success || codigoId === null) {
         this.rechazo(null, "enlazar", null, "operacion_no_permitida");
-        return sesion.enviar({ ok: false, error: { codigo: "operacion_no_permitida" } });
+        sesion.enviar({ ok: false, error: { codigo: "operacion_no_permitida" } });
+        return true;
       }
       const nombre = pedido.data.dispositivo;
       const id = codigoId;
@@ -548,7 +706,8 @@ export class Remoto {
       });
       if (!resultado) {
         this.rechazo(null, "enlazar", null, "codigo_usado");
-        return sesion.enviar({ ok: false, error: { codigo: "codigo_usado" } });
+        sesion.enviar({ ok: false, error: { codigo: "codigo_usado" } });
+        return true;
       }
       this.secretos.delete(buzon);
       this.datos.registrar({ dispositivoId: resultado.id, dispositivo: resultado.nombre, herramienta: "enlazar", pedido: null, ids: [], resultado: "lectura", motivo: null });
@@ -559,16 +718,18 @@ export class Remoto {
     } finally {
       sesion.cerrar();
     }
+    return true;
   }
 
-  private async atenderEnlace(t: Transporte, buzon: string): Promise<void> {
+  /** Atiende una lectura; true si la lectora presentó la clave de un dispositivo vigente. */
+  private async atenderEnlace(t: Transporte, buzon: string, esperaPrimerMensajeMs = ESCUCHA_SIN_PLAZO_MS): Promise<boolean> {
     let dispositivo: Dispositivo | null = null;
     let sesion;
     try {
       sesion = await abrirComoRespondedor(t, {
         yo: this.identidad,
         modo: "enlace",
-        esperaPrimerMensajeMs: ESCUCHA_SIN_PLAZO_MS,
+        esperaPrimerMensajeMs,
         esperaMs: this.esperaMs * 5,
         aceptar: (estatica) => {
           dispositivo = this.datos.dispositivoPorBuzon(buzon);
@@ -585,7 +746,7 @@ export class Remoto {
         },
       });
     } catch {
-      return;
+      return false;
     }
     try {
       const pedido = await sesion.recibir(this.esperaMs * 5);
@@ -600,6 +761,7 @@ export class Remoto {
     } finally {
       sesion.cerrar();
     }
+    return true;
   }
 
   /**
@@ -685,17 +847,22 @@ export class Remoto {
   async enlazar(codigoTexto: string, origen?: string | null, dispositivo = this.datos.nombrePc()): Promise<{ origen: string; nombre: string | null; vence_en: string }> {
     if (origen) validarOrigen(origen);
     if (origen && this.datos.enlace(origen)) throw new ReglaError("origen_repetido", `ya hay un enlace llamado «${origen}»`);
+    const invitacion = leerInvitacion(codigoTexto);
     let codigo;
     try {
-      codigo = leerCodigo(codigoTexto);
+      codigo = leerCodigo(invitacion?.codigo ?? codigoTexto);
     } catch (error) {
       throw new ReglaError("codigo_invalido", (error as Error).message);
     }
-    const rele = this.datos.rele();
-    if (!rele) throw new ReglaError("sin_rele", "falta configurar el relé: agent-memory remote relay <url>");
+    const rele = invitacion ? null : this.datos.rele();
+    if (!invitacion && !rele) {
+      throw new ReglaError("sin_rele", "falta configurar el relé (agent-memory remote relay <url>), o pegá la invitación directa: <código>@<dirección>:<puerto>");
+    }
     let t: Transporte | null = null;
     try {
-      t = await this.conectarLectora(rele, codigo.buzon, Date.now() + this.esperaMs * 5);
+      t = invitacion
+        ? await conectarDirecto({ host: invitacion.host, puerto: invitacion.puerto, buzon: codigo.buzon, esperaMs: this.esperaMs * 5 })
+        : await this.conectarLectora(rele as { url: string; clave: string }, codigo.buzon, Date.now() + this.esperaMs * 5);
       const sesion = await abrirComoIniciador(t, { yo: this.identidad, secreto: codigo.secreto, esperaMs: this.esperaMs * 5 });
       sesion.enviar({ op: "enlazar", dispositivo: dispositivo.slice(0, 80) || "dispositivo" });
       const r = (await sesion.recibir(this.esperaMs * 5)) as {
@@ -713,7 +880,15 @@ export class Remoto {
       }
       const nombre = nombreValido(r.nombre);
       const elegido = origen ?? this.datos.origenLibre(nombre);
-      const enlace = this.datos.guardarEnlace({ origen: elegido, buzon: r.buzon, claveDuena: sesion.otro, enlaceId: r.enlace_id, venceEn: r.vence_en, nombre });
+      const enlace = this.datos.guardarEnlace({
+        origen: elegido,
+        buzon: r.buzon,
+        claveDuena: sesion.otro,
+        enlaceId: r.enlace_id,
+        venceEn: r.vence_en,
+        nombre,
+        direccion: invitacion ? hostPuerto(invitacion.host, invitacion.puerto) : null,
+      });
       this.reconciliar();
       return { origen: enlace.origen, nombre: enlace.nombre, vence_en: enlace.venceEn };
     } catch (error) {
@@ -824,15 +999,20 @@ export class Remoto {
   }
 
   private async pedirAhora(enlace: Enlace, op: LecturaRemota, datos: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const rele = this.datos.rele();
-    if (!rele) throw new ErrorEnlace("sin_respuesta", enlace.origen, "sin relé configurado");
+    // Cada enlace va siempre por el camino con que se canjeó: directo a su dirección o por el relé.
+    const destino = enlace.direccion ? leerDestino(enlace.direccion) : null;
+    if (enlace.direccion && !destino) throw new ErrorEnlace("sin_respuesta", enlace.origen, "dirección del enlace ilegible");
+    const rele = destino ? null : this.datos.rele();
+    if (!destino && !rele) throw new ErrorEnlace("sin_respuesta", enlace.origen, "sin relé configurado");
     let t: Transporte | null = null;
     let reloj: NodeJS.Timeout | undefined;
     const vencido = new Promise<never>((_, mal) => {
       reloj = setTimeout(() => mal(new ErrorEnlace("sin_respuesta", enlace.origen, null)), this.esperaMs);
     });
     const trabajo = (async () => {
-      t = await this.conectarLectora(rele, enlace.buzon, Date.now() + this.esperaMs);
+      t = destino
+        ? await conectarDirecto({ ...destino, buzon: enlace.buzon, esperaMs: this.esperaMs })
+        : await this.conectarLectora(rele as { url: string; clave: string }, enlace.buzon, Date.now() + this.esperaMs);
       const sesion = await abrirComoIniciador(t, { yo: this.identidad, otro: enlace.claveDuena, esperaMs: this.esperaMs });
       // Solo una dueña ≥ 0.4 (que ya dijo su nombre) acepta el campo `nombre` en el pedido (plan 008, P1).
       sesion.enviar(enlace.nombre ? { op, datos, nombre: this.datos.nombrePc() } : { op, datos });

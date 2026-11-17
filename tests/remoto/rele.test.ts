@@ -6,7 +6,7 @@ import { connect, type AddressInfo, type Socket } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { abrirComoIniciador, abrirComoRespondedor, cargarIdentidad, generarIdentidad } from "../../src/remoto/canal.js";
-import { crearRele, leerClaveRele, type Rele } from "../../src/remoto/rele.js";
+import { crearRele, leerCabeceraIp, leerClaveRele, type Rele } from "../../src/remoto/rele.js";
 import { conectarRele, ErrorRele, proxyPara } from "../../src/remoto/transporte.js";
 import { CLI, puertoLibre } from "../helpers/servicio.js";
 import { dirTemporal } from "../helpers/temp.js";
@@ -222,3 +222,61 @@ async function esperar(condicion: () => boolean, tope = 5000): Promise<void> {
     await new Promise((ok) => setTimeout(ok, 20));
   }
 }
+
+describe("límite de intentos del relé", () => {
+  const MALA = "Bearer clave-mala-clave-mala-clave-mala";
+  const BUENA = `Bearer ${CLAVE}`;
+
+  async function limitado(op: { cabeceraIp?: string | null } = {}) {
+    const r = await crearRele({ clave: CLAVE, limite: { fallos: 3 }, ...op });
+    abiertos.push(r);
+    const http = r.url.replace(/^ws/, "http");
+    const pedir = async (authorization: string | null, cabeceras: Record<string, string> = {}) =>
+      (await fetch(`${http}/`, { headers: { ...(authorization ? { authorization } : {}), ...cabeceras } })).status;
+    return { r, pedir };
+  }
+
+  it("tras varias claves equivocadas desde una IP responde 429, también con la buena; sin clave sigue el 401 y no cuenta", async () => {
+    const { r, pedir } = await limitado();
+    for (let n = 0; n < 5; n++) expect(await pedir(null)).toBe(401);
+    expect(await pedir(BUENA)).toBe(204);
+    for (let n = 0; n < 3; n++) expect(await pedir(MALA)).toBe(401);
+    expect(await pedir(MALA)).toBe(429);
+    expect(await pedir(BUENA)).toBe(429);
+    // Un monitor que consulta sin clave sigue viendo 401: prueba que el relé y el proxy responden.
+    expect(await pedir(null)).toBe(401);
+    expect(await codigoRele(conectarRele({ url: r.url, clave: CLAVE, buzon: buzon() }))).toBe("bloqueado");
+  });
+
+  it("por defecto la IP sale de CF-Connecting-IP: otra IP sigue entrando (el relé detrás de Cloudflare no cambia)", async () => {
+    const { pedir } = await limitado();
+    for (let n = 0; n < 3; n++) await pedir(MALA, { "cf-connecting-ip": "203.0.113.5" });
+    expect(await pedir(BUENA, { "cf-connecting-ip": "203.0.113.5" })).toBe(429);
+    expect(await pedir(BUENA, { "cf-connecting-ip": "203.0.113.6" })).toBe(204);
+  });
+
+  it("con la cabecera de su plataforma declarada, cambiar CF-Connecting-IP no esquiva el límite", async () => {
+    const { pedir } = await limitado({ cabeceraIp: "fly-client-ip" });
+    for (let n = 0; n < 3; n++) await pedir(MALA, { "fly-client-ip": "198.51.100.7", "cf-connecting-ip": `203.0.113.${n}` });
+    expect(await pedir(BUENA, { "fly-client-ip": "198.51.100.7", "cf-connecting-ip": "203.0.113.99" })).toBe(429);
+    expect(await pedir(BUENA, { "fly-client-ip": "198.51.100.8" })).toBe(204);
+  });
+
+  it("con «ninguna» cuenta la IP del socket, y en X-Forwarded-For vale la última entrada", async () => {
+    const socket = await limitado({ cabeceraIp: null });
+    for (let n = 0; n < 3; n++) await socket.pedir(MALA, { "cf-connecting-ip": `203.0.113.${n}` });
+    expect(await socket.pedir(BUENA, { "cf-connecting-ip": "203.0.113.99" })).toBe(429);
+
+    const xff = await limitado({ cabeceraIp: "x-forwarded-for" });
+    for (let n = 0; n < 3; n++) await xff.pedir(MALA, { "x-forwarded-for": `10.9.9.${n}, 198.51.100.7` });
+    expect(await xff.pedir(BUENA, { "x-forwarded-for": "10.9.9.99, 198.51.100.7" })).toBe(429);
+    expect(await xff.pedir(BUENA, { "x-forwarded-for": "198.51.100.7, 198.51.100.8" })).toBe(204);
+  });
+
+  it("la cabecera se pide por nombre o «ninguna»; otra cosa se rechaza diciendo la forma", () => {
+    expect(leerCabeceraIp(undefined)).toBeUndefined();
+    expect(leerCabeceraIp(" Fly-Client-IP ")).toBe("fly-client-ip");
+    expect(leerCabeceraIp("ninguna")).toBeNull();
+    expect(() => leerCabeceraIp("x forwarded")).toThrowError(/fly-client-ip, o «ninguna»; llegó «x forwarded»/);
+  });
+});

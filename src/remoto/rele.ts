@@ -7,6 +7,9 @@
  *   guarda y no registra nada de su contenido. Lo que llega antes de que esté el otro se encola con tope.
  * - Tope de tamaño por mensaje y cierre por inactividad. Cuando un extremo se va, se cierra el otro: cada par es
  *   una sesión.
+ * - Límite propio de intentos: las peticiones que traen una clave cuentan por IP; tras varias equivocadas, esa IP
+ *   recibe 429 un rato, aunque traiga la buena. Las que no traen clave (monitores, chequeos de salud) siguen en 401 y
+ *   no cuentan. La IP sale de la cabecera que fija el proxy de delante (`cabeceraIp`), o del socket.
  * - `/pc` es el canal de control de cada PC 0.3.0 (informe de metadatos y órdenes del panel); `/dashboard` es el panel,
  *   que no usa la clave del relé sino un JWT de Cloudflare Access verificado aquí (plan 007). Sin Access configurado,
  *   `/dashboard` responde 404.
@@ -22,6 +25,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import { version as versionPaquete } from "../version.js";
 import { CABECERA_ACCESS, crearVerificador, type OpcionesAcceso } from "./acceso.js";
+import { LimiteIntentos, type OpcionesLimite } from "./limite.js";
 import { DURACIONES, EstadoRele } from "./rele-estado.js";
 
 export const TOPE_MENSAJE_POR_DEFECTO = 1024 * 1024;
@@ -32,6 +36,12 @@ const TOPE_CONEXIONES = 256;
 const BUZON = /^\/buzon\/([A-Za-z0-9_-]{16,64})$/;
 /** Largo mínimo de la clave del relé. */
 export const LARGO_MINIMO_CLAVE = 24;
+/**
+ * Cabecera de la IP del cliente por defecto: la que fija Cloudflare. Es la de antes del límite propio, así un relé
+ * detrás de Cloudflare no cambia al actualizarse. Un despliegue sin Cloudflare declara la de su proxy.
+ */
+export const CABECERA_IP_POR_DEFECTO = "cf-connecting-ip";
+const NOMBRE_CABECERA = /^[a-z0-9-]{1,64}$/;
 
 export interface OpcionesRele {
   clave: string;
@@ -43,6 +53,10 @@ export interface OpcionesRele {
   acceso?: OpcionesAcceso;
   /** Carpeta con los estáticos del panel; por defecto `dist/panel` del paquete. */
   dirPanel?: string | null;
+  /** Cabecera con la IP del cliente que fija el proxy de delante; `null` usa la del socket. */
+  cabeceraIp?: string | null;
+  /** Umbrales del límite de intentos (las pruebas los acortan). */
+  limite?: OpcionesLimite;
 }
 
 const CABECERA_PC = "x-agent-memory-pc";
@@ -108,6 +122,13 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
   const wssControl = new WebSocketServer({ noServer: true, maxPayload: TOPE_INFORME, perMessageDeflate: false });
   const estado = new EstadoRele();
   const verificador = op.acceso ? crearVerificador(op.acceso) : null;
+  const cabeceraIp = op.cabeceraIp === undefined ? CABECERA_IP_POR_DEFECTO : op.cabeceraIp;
+  if (cabeceraIp !== null && !NOMBRE_CABECERA.test(cabeceraIp)) throw new Error(`cabecera de IP inválida: «${cabeceraIp.slice(0, 64)}»`);
+  const ipDe = (req: IncomingMessage) => ipDesde(req, cabeceraIp);
+  const limite = new LimiteIntentos(op.limite);
+  /** Un intento contra la clave trae una clave; uno sin cabecera es un monitor o un escáner y no cuenta. */
+  const intento = (req: IncomingMessage) => Boolean(req.headers.authorization);
+  const limitado = (req: IncomingMessage) => intento(req) && limite.limitada(ipDe(req));
   const dirPanel = op.dirPanel === undefined ? fileURLToPath(new URL("../panel/", import.meta.url)) : op.dirPanel;
   const version = versionPaquete();
 
@@ -119,7 +140,10 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
   // Un intento contra la clave trae una clave. Sin cabecera es un chequeo de salud, un monitor que acepta el 401 o un
   // escáner: responde 401 igual, pero no ensucia «desconocidas» del panel.
   const rechazarClave = (req: IncomingMessage): void => {
-    if (req.headers.authorization) estado.rechazo(ipDe(req));
+    if (!intento(req)) return;
+    const ip = ipDe(req);
+    estado.rechazo(ip);
+    limite.fallo(ip);
   };
 
   const servidor: Server = createServer((req, res) => {
@@ -132,6 +156,7 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
       return;
     }
     // Sin upgrade no hay nada que servir; con la clave, 204 sirve para comprobar que el relé se alcanza.
+    if (limitado(req)) return void res.writeHead(429, { "content-length": "0" }).end();
     const ok = autorizado(req);
     if (!ok) rechazarClave(req);
     res.writeHead(ok ? 204 : 401, { "content-length": "0" }).end();
@@ -190,6 +215,7 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
     const ip = ipDe(req);
     const cabeceraPc = req.headers[CABECERA_PC];
     const pc = typeof cabeceraPc === "string" && HUELLA_PC.test(cabeceraPc) ? cabeceraPc : null;
+    if (limitado(req)) return rechazar(socket, 429, "Too Many Requests");
     if (!autorizado(req)) {
       rechazarClave(req);
       return rechazar(socket, 401, "Unauthorized");
@@ -284,13 +310,26 @@ export async function crearRele(op: OpcionesRele): Promise<Rele> {
 }
 
 /**
- * IP del cliente: la de `CF-Connecting-IP` si viene (el relé publicado solo acepta tráfico de Cloudflare, que la
- * fija), si no la del socket.
+ * IP del cliente: la de la cabecera que fija el proxy de delante, si viene y es una IP; si no, la del socket. En una
+ * lista (`X-Forwarded-For`) vale la última: la agrega el proxy más cercano, lo de antes puede venir del cliente.
  */
-function ipDe(req: IncomingMessage): string | null {
-  const cf = req.headers["cf-connecting-ip"];
-  if (typeof cf === "string" && /^[0-9a-fA-F.:]{2,45}$/.test(cf)) return cf;
+function ipDesde(req: IncomingMessage, cabecera: string | null): string | null {
+  if (cabecera) {
+    const valor = req.headers[cabecera];
+    const texto = Array.isArray(valor) ? valor.at(-1) : valor;
+    const ultima = texto?.split(",").at(-1)?.trim();
+    if (ultima && /^[0-9a-fA-F.:]{2,45}$/.test(ultima)) return ultima;
+  }
   return req.socket.remoteAddress ?? null;
+}
+
+/** La cabecera de IP pedida por entorno o argumento: un nombre, o «ninguna» para usar el socket. */
+export function leerCabeceraIp(valor: string | undefined): string | null | undefined {
+  const limpio = valor?.trim().toLowerCase();
+  if (!limpio) return undefined;
+  if (limpio === "ninguna") return null;
+  if (!NOMBRE_CABECERA.test(limpio)) throw new Error(`la cabecera de IP es un nombre como fly-client-ip, o «ninguna»; llegó «${limpio.slice(0, 64)}»`);
+  return limpio;
 }
 
 function json(res: ServerResponse, estado: number, cuerpo: unknown): void {

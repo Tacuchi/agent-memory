@@ -36,6 +36,8 @@ export interface Enlace {
   usadoEn: string | null;
   /** Nombre configurado de la PC dueña; null si es de una versión que no lo comunica. */
   nombre: string | null;
+  /** `host:puerto` de la dueña en el modo directo; null = el enlace va por el relé. */
+  direccion: string | null;
 }
 
 /** Uso de un día, sin contenido: lecturas recibidas (dueña), hechas (lectora), bytes por el relé y rechazos. */
@@ -110,6 +112,12 @@ export interface Rele {
   clave: string;
 }
 
+/** Dónde escucha esta PC en el modo directo: una dirección suya (Tailscale o LAN) y un puerto. */
+export interface Directo {
+  direccion: string;
+  puerto: number;
+}
+
 export interface RegistroRemoto {
   id: number;
   fecha: string;
@@ -176,6 +184,17 @@ export class DatosRemotos {
 
   fijarRele(rele: Rele): void {
     this.fijarAjuste("rele", JSON.stringify(rele));
+  }
+
+  directo(): Directo | null {
+    const valor = this.ajuste("directo");
+    return valor ? (JSON.parse(valor) as Directo) : null;
+  }
+
+  /** `null` apaga el modo directo. */
+  fijarDirecto(directo: Directo | null): void {
+    if (directo) this.fijarAjuste("directo", JSON.stringify(directo));
+    else this.db.prepare("DELETE FROM remoto_ajustes WHERE clave = 'directo'").run();
   }
 
   // ── Códigos (dueña) ──────────────────────────────────────────────────────────
@@ -313,11 +332,11 @@ export class DatosRemotos {
 
   // ── Enlaces (lectora) ────────────────────────────────────────────────────────
 
-  guardarEnlace(e: Omit<Enlace, "id" | "creadoEn" | "usadoEn">): Enlace {
+  guardarEnlace(e: Omit<Enlace, "id" | "creadoEn" | "usadoEn" | "direccion"> & { direccion?: string | null }): Enlace {
     if (this.enlace(e.origen)) throw new ReglaError("origen_repetido", `ya hay un enlace llamado «${e.origen}»`);
     this.db
-      .prepare("INSERT INTO remoto_enlaces (origen, buzon, clave_duena, enlace_id, vence_en, creado_en, nombre) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(e.origen, e.buzon, e.claveDuena, e.enlaceId, e.venceEn, this.ahora(), e.nombre);
+      .prepare("INSERT INTO remoto_enlaces (origen, buzon, clave_duena, enlace_id, vence_en, creado_en, nombre, direccion) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(e.origen, e.buzon, e.claveDuena, e.enlaceId, e.venceEn, this.ahora(), e.nombre, e.direccion ?? null);
     return this.enlace(e.origen) as Enlace;
   }
 
@@ -541,6 +560,7 @@ interface FilaEnlace {
   creado_en: string;
   usado_en: string | null;
   nombre: string | null;
+  direccion: string | null;
 }
 
 interface FilaPendiente {
@@ -640,5 +660,6 @@ function enlaceDe(f: FilaEnlace): Enlace {
     creadoEn: f.creado_en,
     usadoEn: f.usado_en ?? null,
     nombre: f.nombre ?? null,
+    direccion: f.direccion ?? null,
   };
 }

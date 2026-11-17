@@ -33,8 +33,8 @@ export function Remoto({ cliente, ahora = () => Date.now() }: { cliente: Cliente
       <div className="remoto-cabecera">
         <h2 id="titulo-remoto">Acceso remoto</h2>
         <p className="meta">
-          Esta PC es la única local. Las demás son conexiones: en cada una ves qué le compartís y qué te comparte. Solo lectura, por
-          un relé que ve datos cifrados.
+          Esta PC es la única local. Las demás son conexiones: en cada una ves qué le compartís y qué te comparte. Solo lectura y
+          cifrado de punta a punta: directo por Tailscale o la red local, o por un relé que solo ve datos cifrados.
         </p>
       </div>
       <Aviso texto={error} />

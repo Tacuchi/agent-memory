@@ -187,6 +187,8 @@ const MIGRACIONES: readonly (string | typeof RECONSTRUIR_ENTRADAS)[] = [
   // Memoria más presente (plan 009): `tipo` deja de estar cerrado en la base (la lista vive en el código) y la regla
   // proyecto/validación también (`esConocimiento`); se suman los contadores de «mostrada» y «leída».
   RECONSTRUIR_ENTRADAS,
+  // Modo directo: la dirección de la dueña de cada enlace canjeado sin relé (null = por relé).
+  `ALTER TABLE remoto_enlaces ADD COLUMN direccion TEXT;`,
 ];
 
 export const VERSION_ESQUEMA = MIGRACIONES.length;

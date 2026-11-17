@@ -1,4 +1,5 @@
 import { cargarConfig, type Config } from "../../src/config.js";
+import type { DireccionPc } from "../../src/remoto/directo.js";
 import { crearRele, type Rele } from "../../src/remoto/rele.js";
 import { arrancarServicio, type App } from "../../src/service/app.js";
 import { leerToken } from "../../src/service/token.js";
@@ -21,12 +22,17 @@ export interface Instalacion {
   cerrar(): Promise<void>;
 }
 
-export async function instalacion(opciones: { esperaMs?: number } = {}): Promise<Instalacion> {
+export async function instalacion(opciones: { esperaMs?: number; direcciones?: () => DireccionPc[] } = {}): Promise<Instalacion> {
   const { dir, limpiar } = dirTemporal("agent-memory-remoto-");
   let desfase = 0;
   const base = cargarConfig({ AGENT_MEMORY_HOME: dir });
   const config: Config = { ...base, port: 0, remoto: { esperaMs: opciones.esperaMs ?? 2000 } };
-  const app = await arrancarServicio(config, { embedder: new EmbedderFalso(), dirWeb: null, reloj: () => new Date(Date.now() + desfase) });
+  const app = await arrancarServicio(config, {
+    embedder: new EmbedderFalso(),
+    dirWeb: null,
+    reloj: () => new Date(Date.now() + desfase),
+    ...(opciones.direcciones ? { direcciones: opciones.direcciones } : {}),
+  });
   const token = leerToken(config.tokenPath);
   const llamar = async (op: string, cuerpo: object, cabeceras: Record<string, string>) => {
     const res = await fetch(`${app.url}/api/${op}`, { method: "POST", headers: { "content-type": "application/json", ...cabeceras }, body: JSON.stringify(cuerpo) });

@@ -89,9 +89,17 @@ export function Invitar({
   );
 }
 
-export function CodigoVigente({ codigo, ahora, cerrar }: { codigo: CodigoNuevo; ahora: () => number; cerrar: () => void }) {
+/**
+ * El código recién generado. Con la conexión directa escuchando llega además la invitación directa (código y dirección
+ * de esta PC); si también hay relé, la persona elige cuál pasar, con la directa primero.
+ */
+export function CodigoVigente({ codigo, ahora, cerrar, rele }: { codigo: CodigoNuevo; ahora: () => number; cerrar: () => void; rele: boolean }) {
   const [restante, setRestante] = useState(() => new Date(codigo.vence_en).getTime() - ahora());
   const [copiado, setCopiado] = useState<string | null>(null);
+  const [modo, setModo] = useState<"directo" | "rele">(codigo.invitacion ? "directo" : "rele");
+  const directo = modo === "directo" && Boolean(codigo.invitacion);
+  const texto = directo ? (codigo.invitacion as string) : codigo.codigo;
+  useEffect(() => setModo(codigo.invitacion ? "directo" : "rele"), [codigo]);
   useEffect(() => {
     setRestante(new Date(codigo.vence_en).getTime() - ahora());
     const reloj = setInterval(() => setRestante(new Date(codigo.vence_en).getTime() - ahora()), 1000);
@@ -101,7 +109,7 @@ export function CodigoVigente({ codigo, ahora, cerrar }: { codigo: CodigoNuevo; 
 
   async function copiar() {
     try {
-      await navigator.clipboard.writeText(codigo.codigo);
+      await navigator.clipboard.writeText(texto);
       setCopiado("Copiado");
     } catch {
       setCopiado("No se pudo copiar: seleccioná el código y copialo a mano.");
@@ -110,9 +118,21 @@ export function CodigoVigente({ codigo, ahora, cerrar }: { codigo: CodigoNuevo; 
 
   return (
     <div className="codigo-vigente" role="group" aria-label="Código para conectar">
+      {codigo.invitacion && rele && (
+        <div className="modo-codigo" role="radiogroup" aria-label="Cómo se conecta la otra PC">
+          <label>
+            <input type="radio" name="modo-codigo" checked={modo === "directo"} onChange={() => setModo("directo")} />
+            Directa
+          </label>
+          <label>
+            <input type="radio" name="modo-codigo" checked={modo === "rele"} onChange={() => setModo("rele")} />
+            Por relé
+          </label>
+        </div>
+      )}
       <div className="codigo-fila">
-        <code className="codigo-grande" aria-label="Código de enlace">
-          {codigo.codigo}
+        <code className="codigo-grande" aria-label={directo ? "Invitación directa" : "Código de enlace"}>
+          {texto}
         </code>
         <button type="button" onClick={() => void copiar()} disabled={segundos === 0}>
           Copiar
@@ -135,8 +155,9 @@ export function CodigoVigente({ codigo, ahora, cerrar }: { codigo: CodigoNuevo; 
       <p>
         En la otra PC: <strong>Acceso remoto → Conectar otra PC → Leer su memoria</strong>. Sirve una sola vez.
       </p>
+      {directo && <p className="meta">La otra PC tiene que estar en tu tailnet de Tailscale o en la misma red que esta.</p>}
       <p className="meta">
-        O en su terminal: <code>agent-memory remote link {codigo.codigo}</code>
+        O en su terminal: <code>agent-memory remote link {texto}</code>
       </p>
       <div className="barra-accion">
         <button type="button" onClick={cerrar}>

@@ -13,7 +13,8 @@ import { dirTemporal } from "../helpers/temp.js";
 // entera si falla a mitad y deja una copia previa de 7 días; después, el tipo ya no está cerrado en la base.
 
 const DIA = 86_400_000;
-const ANTERIOR = VERSION_ESQUEMA - 1;
+/** El esquema previo a la reconstrucción (la 7); las migraciones posteriores no la mueven. */
+const ANTERIOR = 6;
 const embedder = new EmbedderFalso();
 
 let dir: string;

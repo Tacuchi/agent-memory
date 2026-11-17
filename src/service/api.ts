@@ -93,17 +93,20 @@ const ESQUEMAS = {
   remoto_nombre: z.object({ nombre: z.string().min(1).max(200) }).strict(),
   remoto_pendiente: z.object({ id, aceptar: z.boolean() }).strict(),
   // Acceso remoto desde la web (plan 008): lo mismo que la CLI, sin escribir nombres, solo la persona.
-  remoto_canjear: z.object({ codigo: z.string().min(1).max(100) }).strict(),
+  // Un código del relé o una invitación directa (`<código>@<dirección>:<puerto>`).
+  remoto_canjear: z.object({ codigo: z.string().min(1).max(200) }).strict(),
   remoto_enlace_quitar: z.object({ origen: z.string().min(1).max(40) }).strict(),
   remoto_enlace_renombrar: z.object({ origen: z.string().min(1).max(40), nuevo: z.string().min(1).max(40) }).strict(),
   remoto_rele: z.object({ url: z.string().min(1).max(500), clave: z.string().min(1).max(500) }).strict(),
   remoto_rele_probar: z.object({}).strict(),
+  remoto_directo: z.object({ direccion: z.string().min(1).max(60).nullable(), puerto: z.number().int().optional() }).strict(),
   remoto_ambitos: z.object({}).strict(),
   remoto_actividad: z.object({ huella: z.string().min(1).max(64), limite: z.number().int().min(1).max(1000).optional() }).strict(),
   // Enlace remoto desde la CLI (token): configurar el relé, canjear un código como lectora y ver el estado sin secretos.
   enlace_estado: z.object({}).strict(),
   enlace_rele: z.object({ url: z.string().min(1), clave: z.string().min(1) }).strict(),
-  enlace_canjear: z.object({ codigo: z.string().min(1).max(100), origen: z.string().min(1).max(40).optional(), dispositivo: z.string().min(1).max(80).optional() }).strict(),
+  enlace_directo: z.object({ direccion: z.string().min(1).max(60).nullable(), puerto: z.number().int().optional() }).strict(),
+  enlace_canjear: z.object({ codigo: z.string().min(1).max(200), origen: z.string().min(1).max(40).optional(), dispositivo: z.string().min(1).max(80).optional() }).strict(),
   // Quitar un enlace propio solo restringe (deja de leer ese origen): lo puede pedir la CLI.
   enlace_quitar: z.object({ origen: z.string().min(1).max(40) }).strict(),
 } as const;
@@ -132,6 +135,7 @@ const SOLO_PERSONA: ReadonlySet<Operacion> = new Set([
   "remoto_enlace_renombrar",
   "remoto_rele",
   "remoto_rele_probar",
+  "remoto_directo",
   "remoto_ambitos",
   "remoto_actividad",
 ]);
@@ -431,6 +435,10 @@ export class Api {
     return this.enlace().probarRele();
   }
 
+  private remoto_directo(d: z.infer<typeof ESQUEMAS.remoto_directo>) {
+    return this.enlace_directo(d);
+  }
+
   /** Global, proyectos y repos de esta memoria con cuántas entradas compartibles tiene cada uno (D04). */
   private remoto_ambitos() {
     const filas = this.store.db
@@ -476,11 +484,17 @@ export class Api {
     return {
       interruptor: e.interruptor,
       rele: e.rele,
+      directo: e.directo,
       escuchando: this.enlace().escuchando().length,
       codigo_vigente: e.codigo !== null,
       dispositivos: e.dispositivos.map((d) => ({ nombre: d.nombre, estado: d.estado, vence_en: d.vence_en })),
       enlaces: e.enlaces,
     };
+  }
+
+  /** Dónde escucha el modo directo (`direccion: null` lo apaga). Escucha solo con el acceso remoto encendido. */
+  private async enlace_directo(d: z.infer<typeof ESQUEMAS.enlace_directo>) {
+    return { directo: await this.enlace().configurarDirecto(d.direccion, d.puerto) };
   }
 
   private enlace_rele(d: z.infer<typeof ESQUEMAS.enlace_rele>) {

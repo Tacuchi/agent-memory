@@ -35,6 +35,8 @@ export interface Enlace {
   enlazado_en?: string;
   vence_en: string;
   usado_en?: string | null;
+  /** `host:puerto` si se canjeó una invitación directa; null = por relé. Falta en servicios anteriores. */
+  direccion?: string | null;
 }
 
 /** Un pedido hecho desde el panel del relé que amplía el acceso: espera la decisión de la persona (D01). */
@@ -47,7 +49,23 @@ export interface PedidoPanel {
   estado: string;
 }
 
-export type CodigoNuevo = { codigo: string; vence_en: string };
+/** `invitacion` (código + dirección de esta PC) llega solo con la conexión directa escuchando. */
+export type CodigoNuevo = { codigo: string; vence_en: string; invitacion?: string | null };
+
+/** Dónde escucha la conexión directa de esta PC y, si no escucha, por qué. */
+export interface Directo {
+  direccion: string | null;
+  puerto: number;
+  estado: "apagado" | "escuchando" | "no_disponible";
+  motivo: string | null;
+}
+
+/** Una dirección de esta PC que sirve para la conexión directa (Tailscale primero). */
+export interface DireccionPc {
+  direccion: string;
+  interfaz: string;
+  tailscale: boolean;
+}
 
 /** Una PC conectada (0.4.1): los dos sentidos unidos por la huella de su clave. */
 export interface Conexion {
@@ -63,7 +81,7 @@ export interface Conexion {
     revocado_en: string | null;
   } | null;
   /** La otra PC le comparte la suya a esta (esta la lee). */
-  leo: { origen: string; enlazado_en: string; usado_en: string | null; vence_en: string } | null;
+  leo: { origen: string; enlazado_en: string; usado_en: string | null; vence_en: string; direccion?: string | null } | null;
   hoy: { leyo: number; lei: number; rechazos: number };
 }
 
@@ -87,6 +105,9 @@ export interface Estado {
   panel?: "conectado" | "conectando" | "inactivo";
   pendientes?: PedidoPanel[];
   rele: { url: string } | null;
+  /** Faltan en servicios sin conexión directa. */
+  directo?: Directo;
+  direcciones?: DireccionPc[];
   codigo: { vence_en: string; intentos_restantes: number } | null;
   dispositivos: Dispositivo[];
   enlaces: Enlace[];

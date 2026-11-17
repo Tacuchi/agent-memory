@@ -80,15 +80,57 @@ laptop. The link is **read-only**: it never writes and never syncs, and nothing 
 
 How it works:
 
-- Both machines connect **outbound** to a small relay that you host (`agent-memory relay`). Neither machine opens a
-  port.
-- The two installations encrypt end to end (X25519, HKDF-SHA256, ChaCha20-Poly1305). The relay only forwards
-  ciphertext. It cannot read queries or entries, and it cannot impersonate either side.
-- Remote access is **off by default**. While it is off, the owner does not connect to the relay at all.
+- There are two ways to connect, with the same pairing codes and the same encryption: **direct**, where the owner
+  listens on its Tailscale or local-network address, and **relay**, where both machines connect outbound to a small
+  relay you host.
+- The two installations encrypt end to end (X25519, HKDF-SHA256, ChaCha20-Poly1305). The network, or the relay, only
+  carries ciphertext. Nobody in between can read queries or entries or impersonate either side.
+- Remote access is **off by default**. While it is off, the owner neither listens nor connects to a relay.
 
-### 1. Deploy the relay
+### Choose how to connect
 
-Run the relay on a server you control, behind an HTTPS reverse proxy that forwards WebSocket upgrades:
+| | Direct | Relay |
+|---|---|---|
+| When | Both machines are on the same [Tailscale](https://tailscale.com/) tailnet, or on the same local network | They cannot reach each other, for example a work laptop outside your tailnet |
+| What you set up | Nothing else: pick an address on the owner | A relay with HTTPS: one step with the published image ([guide](deploy/relay/README.md)) |
+| What listens | The owner, on the one address you pick, only for the encrypted channel | Nothing on either machine: both go out to the relay |
+
+Start with direct. Each link keeps the way it was paired: a direct link never falls back to a relay.
+
+### Direct connection
+
+1. Put both machines on the same tailnet, or on the same local network.
+2. On the machine that **owns** the memory, open **Remote access** (*Acceso remoto*) → **This PC** → **Direct
+   connection** (*Conexión directa*). Pick the address (Tailscale's comes first), keep port `47822` or change it,
+   and turn sharing on. From a terminal instead:
+
+   ```sh
+   agent-memory remote direct 100.101.102.103      # or 100.101.102.103:47900; "remote direct off" turns it off
+   agent-memory remote status
+   ```
+
+3. [Pair](#pair) the machines. With the direct connection listening, the code comes as a **direct invitation**,
+   `<code>@<address>:<port>`: paste it on the reading machine as you would paste a code.
+
+What to know:
+
+- Only the encrypted remote channel listens on that address. The local API stays on `127.0.0.1`, and the service never
+  listens on every interface.
+- The local network is treated as untrusted: the code and the keys pinned at pairing are the defense. After 10 failed
+  attempts in 10 minutes from one address, the owner answers it `429` for 15 minutes.
+- If the address is missing (Tailscale is down, the laptop changed networks), the owner listens nowhere else and tries
+  again until it is back. **Remote access** and `remote status` say why it is not listening.
+- Your system firewall may ask whether `node` can accept incoming connections. Allow it on the network you use.
+- If the owner's address changes, which is common on a local network without Tailscale, pair again.
+
+### Relay
+
+#### Deploy the relay
+
+**In one step:** run the published image on Fly.io, Render or Coolify. The platform gives it HTTPS and keeps the key
+as a secret: [`deploy/relay/README.md`](deploy/relay/README.md).
+
+**On your own server:** run the relay behind an HTTPS reverse proxy that forwards WebSocket upgrades:
 
 ```sh
 openssl rand -base64 32 > relay.key && chmod 600 relay.key
@@ -99,17 +141,19 @@ agent-memory relay --clave-archivo relay.key --puerto 8787   # listens on 127.0.
 - Without the key the relay answers `401` on every path. `curl -i https://<relay>/` should return `401`.
 - The relay keeps nothing and logs no content. It pairs at most two connections per mailbox and caps message size and
   idle time.
-- **Limit failed attempts before exposing it.** The relay compares the key in constant time but does not count
-  attempts. Put a per-IP rate limit in front of it, in the reverse proxy. Repeated `curl -i https://<relay>/` without
-  the key should end in `429`, not in endless `401`s.
+- The relay limits failed key attempts by itself. After 10 wrong keys in 10 minutes from one IP, that IP gets `429`
+  for 15 minutes, even with the right key. Requests without a key are not counted and keep getting `401`.
+- Behind a proxy, tell the relay which header carries the client IP: `--cabecera-ip <header>` or
+  `AGENT_MEMORY_RELAY_IP_HEADER`. The default is `cf-connecting-ip` (Cloudflare); `ninguna` uses the connection's
+  address. Never trust a header the client can set: check it as the [guide](deploy/relay/README.md#check-it) shows.
 - A health check or uptime monitor can treat the `401` as "up": it proves the proxy and the relay answer without
   knowing the key.
 
-[`deploy/relay/`](deploy/relay/) has an example: a `Dockerfile` that runs the published package (key only from
+[`deploy/relay/`](deploy/relay/) has the `Dockerfile` of the published image (key only from
 `AGENT_MEMORY_RELAY_KEY`), and a Traefik file-provider route for Coolify behind Cloudflare that accepts only
 Cloudflare's ranges and rate-limits by the real client IP.
 
-### 2. Configure the relay on both machines
+#### Configure the relay on both machines
 
 In the web UI (`agent-memory open` → **Remote access**, *Acceso remoto*), enter the relay URL and key in the **This
 PC** bar. The key is written once and never shown again; the bar tells you whether the relay answers or rejects the
@@ -126,13 +170,14 @@ name.
 If your network requires a proxy, set `HTTPS_PROXY`. The connection goes out through an HTTP `CONNECT` tunnel, with
 TLS inside it.
 
-### 3. Pair
+### Pair
 
 1. On the machine that **owns** the memory, open **Remote access**, turn sharing on and choose **Connect another PC**
    (*Conectar otra PC*) → **Share your memory**. Tick what the other PC will read (global, projects, repos, unvalidated
    entries) and generate a code. The code is valid for 10 minutes and allows 5 attempts.
 2. On the **reading** machine, open **Remote access** → **Connect another PC** → **Read its memory** and paste the
-   code, or run `agent-memory remote link <code>`.
+   code or the direct invitation, or run `agent-memory remote link <code-or-invitation>`. A direct invitation needs no
+   relay on either machine; a plain code goes through the relay.
 
 **Remote access** shows this PC (the only local one) and one card per connected PC. Each card shows both directions,
 like location sharing: what you share with that PC and what it shares with you. Each card has its own activity: what
@@ -197,7 +242,8 @@ The dashboard refreshes every 10 seconds; keep any per-IP rate limit in front of
 | Embedding model cache | `~/.cache/agent-memory/models/` | `AGENT_MEMORY_MODEL_CACHE` |
 | Claude Code configuration (`settings.json`, `skills/agent-memory/`) | `~/.claude/` | `CLAUDE_CONFIG_DIR` |
 
-The local service listens on `127.0.0.1:47821` (`AGENT_MEMORY_PORT`) and requires the token.
+The local service listens on `127.0.0.1:47821` (`AGENT_MEMORY_PORT`) and requires the token. With the direct
+connection on, the encrypted remote channel also listens on the address you picked (port `47822` by default).
 
 ## Update
 

@@ -32,7 +32,7 @@ export function PegarCodigo({ cliente, recargar, enfocar = false }: { cliente: C
   }
   return (
     <form className="pegar" aria-label="Leer su memoria" onSubmit={enviar}>
-      <label htmlFor={id}>Código de la otra PC</label>
+      <label htmlFor={id}>Código o invitación de la otra PC</label>
       <div className="en-linea">
         <input
           id={id}
@@ -42,7 +42,7 @@ export function PegarCodigo({ cliente, recargar, enfocar = false }: { cliente: C
           spellCheck={false}
           autoComplete="off"
           autoCapitalize="characters"
-          placeholder="XXXX-XXXX-…"
+          placeholder="XXXX-XXXX-… o …@dirección:puerto"
           onChange={(e) => setCodigo(e.target.value)}
         />
         <button type="submit" className="primario" disabled={!limpio || canje.ocupado}>
@@ -87,6 +87,17 @@ export function PaneLeo({ c, cliente, recargar, pegarSuCodigo }: { c: Conexion; 
       <span className="meta-linea">
         los agentes la consultan como <code className="origen">{e.origen}</code>
       </span>
+      {e.direccion !== undefined && (
+        <span className="meta-linea">
+          {e.direccion ? (
+            <>
+              directa a <code>{e.direccion}</code>
+            </>
+          ) : (
+            "por relé"
+          )}
+        </span>
+      )}
       <span className="meta-linea">
         leíste <span className="num">{fecha(e.usado_en)}</span> · vence <span className="num">{fecha(e.vence_en)}</span>
       </span>

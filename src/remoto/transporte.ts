@@ -75,6 +75,34 @@ export async function conectarRele(op: OpcionesConexion): Promise<Transporte> {
   return transporte;
 }
 
+/**
+ * Lectora en el modo directo: abre `ws://<host>:<puerto>/buzon/<id>` en la dueña, sin clave de relé y sin proxy (es la
+ * red local o la tailnet). Va sin TLS a propósito: lo que viaja ya está cifrado de punta a punta por el canal.
+ */
+export async function conectarDirecto(op: { host: string; puerto: number; buzon: string; esperaMs?: number }): Promise<Transporte> {
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(op.buzon)) throw new ErrorRele("sin_conexion", "id de buzón inválido");
+  const host = op.host.includes(":") ? `[${op.host}]` : op.host;
+  const destino = `${host}:${op.puerto}`;
+  const ws = new WebSocket(`ws://${destino}/buzon/${op.buzon}`, {
+    maxPayload: TOPE_MENSAJE_POR_DEFECTO,
+    handshakeTimeout: op.esperaMs ?? ESPERA_CONEXION_MS,
+    perMessageDeflate: false,
+  });
+  const transporte = transporteDe(ws);
+  await new Promise<void>((ok, mal) => {
+    ws.once("open", () => ok());
+    ws.on("unexpected-response", (_req, res: IncomingMessage) => {
+      const estado = res.statusCode ?? 0;
+      ws.terminate();
+      if (estado === 429) mal(new ErrorRele("bloqueado", `la otra PC limitó a esta por intentos fallidos (429); probá de nuevo en unos minutos`));
+      else if (estado === 404) mal(new ErrorRele("sin_conexion", `la otra PC no atiende este enlace en ${destino} (404): ¿tiene el acceso remoto encendido?`));
+      else mal(new ErrorRele("sin_conexion", `la otra PC respondió ${estado} en ${destino}`));
+    });
+    ws.once("error", (error) => mal(new ErrorRele("sin_conexion", `no se pudo conectar a la otra PC en ${destino}: ${error.message}`)));
+  });
+  return transporte;
+}
+
 /** Abre el canal de control de esta PC con el relé (`/pc`). */
 export async function conectarControl(op: Omit<OpcionesConexion, "buzon"> & { pc: string }): Promise<CanalControl> {
   const base = new URL(op.url);
@@ -144,13 +172,15 @@ function esperarApertura(ws: WebSocket): Promise<void> {
       if (estado === 401) mal(new ErrorRele("clave_rele", "el relé rechazó la clave (401)"));
       else if (estado === 409) mal(new ErrorRele("buzon_ocupado", "el buzón ya tiene dos extremos"));
       else if (estado === 403) mal(new ErrorRele("bloqueado", "el relé bloqueó esta PC o esta IP (403)"));
+      else if (estado === 429) mal(new ErrorRele("bloqueado", "el relé limitó esta IP por intentos con una clave equivocada (429); probá de nuevo en 15 minutos"));
       else mal(new ErrorRele("sin_conexion", `el relé respondió ${estado}`));
     });
     ws.once("error", (error) => mal(new ErrorRele("sin_conexion", `no se pudo conectar al relé: ${error.message}`)));
   });
 }
 
-function transporteDe(ws: WebSocket): Transporte {
+/** Presenta un WebSocket abierto como {@link Transporte} (lo usan el cliente del relé y el servidor directo). */
+export function transporteDe(ws: WebSocket): Transporte {
   const previos: Buffer[] = [];
   const TOPE_PREVIOS = 64;
   let receptor: ((datos: Buffer) => void) | null = null;

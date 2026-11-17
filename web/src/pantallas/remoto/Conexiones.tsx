@@ -77,7 +77,7 @@ export function Conexiones({
           <div className="camino" role="group" aria-labelledby="titulo-compartirle">
             <h4 id="titulo-compartirle">Compartirle tu memoria</h4>
             {codigo ? (
-              <CodigoVigente codigo={codigo} ahora={ahora} cerrar={() => setCodigo(null)} />
+              <CodigoVigente codigo={codigo} ahora={ahora} cerrar={() => setCodigo(null)} rele={Boolean(estado.rele)} />
             ) : apagado ? (
               <p className="meta">Encendé «Compartir» en «Esta PC» para generar un código.</p>
             ) : (
