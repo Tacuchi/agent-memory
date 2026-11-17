@@ -32,6 +32,9 @@ jobs:
   # paquete, es decir, cuando la persona publica un release (o relanza a mano esta publicación).
   relay-image:
     needs: publish
+    # El job de npm puede fallar por OIDC (E404) cuando se publica a mano desde la máquina: la imagen se construye
+    # igual, porque el paso siguiente espera a que npm sirva la versión.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
