@@ -6,7 +6,8 @@ import type { MemoryStore } from "../store/store.js";
 
 // Exportación a markdown: un archivo por entrada, legible sin el servicio, con el
 // contenido y sus estados en la cabecera YAML. Por defecto, las activas; completa, todas con su
-// historia. Restaurar desde una exportación queda fuera del producto.
+// historia. Restaurar una base desde una exportación queda fuera del producto; compartir conocimiento es el zip de
+// intercambio (src/intercambio), que se importa fusionando.
 
 export interface OpcionesExportacion {
   /** Todas las entradas (reemplazadas, vencidas y rechazadas incluidas) con sus revisiones. */

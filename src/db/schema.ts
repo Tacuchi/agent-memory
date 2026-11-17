@@ -189,6 +189,47 @@ const MIGRACIONES: readonly (string | typeof RECONSTRUIR_ENTRADAS)[] = [
   RECONSTRUIR_ENTRADAS,
   // Modo directo: la dirección de la dueña de cada enlace canjeado sin relé (null = por relé).
   `ALTER TABLE remoto_enlaces ADD COLUMN direccion TEXT;`,
+  // Importar un zip de intercambio: la importación (sin contenido, se conserva), sus entradas en espera (el texto sale
+  // al resolverse cada una) y las relaciones del zip hasta el cierre; cada entrada creada desde una lleva su marca.
+  `
+  CREATE TABLE importaciones (
+    id               INTEGER PRIMARY KEY,
+    archivo          TEXT NOT NULL,
+    huella           TEXT NOT NULL,
+    ambito           TEXT NOT NULL CHECK (ambito IN ('global','proyecto','repo')),
+    ambito_ref       TEXT,
+    con_preferencias INTEGER NOT NULL DEFAULT 0,
+    importada_en     TEXT NOT NULL,
+    estado           TEXT NOT NULL DEFAULT 'en_espera' CHECK (estado IN ('en_espera','cerrada','rechazada')),
+    cerrada_en       TEXT,
+    CHECK ((ambito = 'global') = (ambito_ref IS NULL))
+  );
+  CREATE INDEX importaciones_huella ON importaciones(huella, estado);
+
+  CREATE TABLE importacion_entradas (
+    importacion_id INTEGER NOT NULL REFERENCES importaciones(id),
+    entrada_zip    INTEGER NOT NULL,
+    tipo           TEXT NOT NULL,
+    titulo         TEXT,
+    contenido      TEXT,
+    resolucion     TEXT CHECK (resolucion IN ('crear','fusionar','descartar')),
+    entrada_id     INTEGER REFERENCES entradas(id) ON DELETE SET NULL,
+    motivo         TEXT,
+    resuelta_en    TEXT,
+    PRIMARY KEY (importacion_id, entrada_zip),
+    CHECK ((resolucion IS NULL) = (titulo IS NOT NULL AND contenido IS NOT NULL))
+  );
+
+  CREATE TABLE importacion_relaciones (
+    importacion_id INTEGER NOT NULL REFERENCES importaciones(id),
+    origen_zip     INTEGER NOT NULL,
+    destino_zip    INTEGER NOT NULL,
+    PRIMARY KEY (importacion_id, origen_zip, destino_zip)
+  );
+
+  ALTER TABLE entradas ADD COLUMN importacion_id INTEGER REFERENCES importaciones(id);
+  CREATE INDEX entradas_importacion ON entradas(importacion_id);
+  `,
 ];
 
 export const VERSION_ESQUEMA = MIGRACIONES.length;

@@ -25,6 +25,7 @@ const SETTINGS_PREVIO = `{\n\t"model": "opus",\n\t"hooks": {\n\t\t"SessionStart"
 
 const settingsPath = () => join(e.home, ".claude", "settings.json");
 const skillPath = () => join(e.home, ".claude", "skills", "agent-memory", "SKILL.md");
+const skillImportacionPath = () => join(e.home, ".claude", "skills", "agent-memory-import", "SKILL.md");
 const llamadasClaude = () => (existsSync(e.logClaude) ? readFileSync(e.logClaude, "utf8").trim().split("\n") : []);
 
 describe("comando del hook", () => {
@@ -119,6 +120,15 @@ describe("doctor y la skill de otra versión", () => {
     expect((await correr(e, ["install", "claude-code"])).code).toBe(0);
     expect((await correr(e, ["doctor"])).stdout).not.toMatch(/skill instalada es de otra versión/);
   });
+
+  it("también avisa si la skill de importación es de otra versión", async () => {
+    e = await entornoCli();
+    expect((await correr(e, ["install", "claude-code"])).code).toBe(0);
+    writeFileSync(skillImportacionPath(), readFileSync(skillImportacionPath(), "utf8").replace("## Pasos", "## Pasos viejos"));
+    const doctor = await correr(e, ["doctor"]);
+    expect(doctor.stdout).toMatch(/claude-code: la skill instalada es de otra versión de agent-memory/);
+    expect(doctor.stdout).toContain("arreglo: «agent-memory install claude-code»");
+  });
 });
 
 describe("install / uninstall claude-code", () => {
@@ -144,6 +154,7 @@ describe("install / uninstall claude-code", () => {
     expect(adds).toHaveLength(2);
     expect(adds[0]).toMatch(/^mcp add --scope user agent-memory -- .*node.* .*cli\.js mcp$/);
     expect(existsSync(skillPath())).toBe(true);
+    expect(readFileSync(skillImportacionPath(), "utf8")).toMatch(/^name: agent-memory-import$/m);
 
     const doctor = await correr(e, ["doctor"]);
     expect(doctor.stdout).toMatch(/ok {4}claude-code: MCP, hook SessionStart y skill instalados/);
@@ -153,6 +164,7 @@ describe("install / uninstall claude-code", () => {
     expect(readFileSync(settingsPath(), "utf8")).toBe(SETTINGS_PREVIO);
     expect(readdirSync(e.estadoClaude)).toEqual([]);
     expect(existsSync(join(e.home, ".claude", "skills", "agent-memory"))).toBe(false);
+    expect(existsSync(join(e.home, ".claude", "skills", "agent-memory-import"))).toBe(false);
     expect(existsSync(join(e.datos, "claude-code.json"))).toBe(false);
     expect((await correr(e, ["doctor"])).stdout).toMatch(/FALLA claude-code: falta: MCP, hook SessionStart, skill/);
   });
@@ -171,7 +183,8 @@ describe("install / uninstall claude-code", () => {
     expect(r.code, r.stderr).toBe(0);
     expect(r.stderr).toBe("");
     const lineas = r.stdout.trimEnd().split("\n");
-    expect(lineas).toHaveLength(3);
+    // MCP, hook y las dos skills.
+    expect(lineas).toHaveLength(4);
     for (const linea of lineas) expect(linea).toMatch(/^· /);
     expect(r.stdout).not.toMatch(/\?|: $/m);
   });

@@ -25,6 +25,8 @@ const ARGS_MINIMOS: Record<(typeof HERRAMIENTAS)[number], Record<string, unknown
   memory_pending: {},
   memory_approve: { id: 1 },
   memory_reject: { id: 1, motivo: "no aplica" },
+  memory_import_get: {},
+  memory_import_resolve: { importacion: 1, entrada: 1, accion: "descartar", motivo: "no aplica" },
 };
 
 let e: EntornoCli;
@@ -54,7 +56,7 @@ describe("servicio caído", () => {
     expect(r.stderr).toMatch(/agent-memory start/);
   });
 
-  it("cada una de las once herramientas MCP devuelve error explícito por el cliente del SDK", async () => {
+  it("cada una de las herramientas MCP devuelve error explícito por el cliente del SDK", async () => {
     const cliente = await clienteMcp(e, e.home);
     try {
       const { tools } = await cliente.listTools();

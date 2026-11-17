@@ -82,7 +82,14 @@ export interface Revision {
   validacion: string | null;
 }
 
-export type Pendiente = Entrada & { reemplazaria: { id: number; titulo: string } | null };
+/** De qué zip importado salió una entrada. */
+export interface OrigenImportacion {
+  id: number;
+  archivo: string;
+  importada_en: string;
+}
+
+export type Pendiente = Entrada & { reemplazaria: { id: number; titulo: string } | null; importacion?: OrigenImportacion | null };
 
 export function mensajeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

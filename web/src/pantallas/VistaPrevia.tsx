@@ -1,7 +1,7 @@
 import { useState, type RefObject } from "react";
 import type { Pendiente } from "../api";
 import type { Navegar } from "../App";
-import { Estados, fecha, lugar } from "./comunes";
+import { Estados, fecha, lugar, textoImportacion } from "./comunes";
 
 /**
  * La pendiente enfocada, completa: se lee y se decide sin salir de la cola. Rechazar queda
@@ -30,6 +30,7 @@ export function VistaPrevia({
       <p className="meta">
         <Estados entrada={e} /> · {lugar(e)} · <span className="num">{fecha(e.actualizada_en)}</span>
       </p>
+      {e.importacion && <p className="meta">{textoImportacion(e.importacion)}</p>}
       <pre className="contenido">{e.contenido}</pre>
       {e.reemplazaria && (
         <p className="meta">

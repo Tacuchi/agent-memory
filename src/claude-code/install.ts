@@ -9,7 +9,8 @@ import { invocacion } from "../ejecutable.js";
 import { argumentosNode, rutaCli } from "../service/daemon.js";
 
 // Conexión con Claude Code, aislada en este módulo: MCP con `claude mcp add`, hook
-// `SessionStart` en settings.json y la skill. Idempotente; la desinstalación quita exactamente eso.
+// `SessionStart` en settings.json y las dos skills (la de uso y la de importación). Idempotente; la desinstalación
+// quita exactamente eso.
 
 export const NOMBRE_MCP = "agent-memory";
 /** Marca que identifica el hook propio entre los de la persona. */
@@ -28,13 +29,32 @@ export function rutasClaude(env: NodeJS.ProcessEnv = process.env) {
   return {
     settings: join(dir, "settings.json"),
     skill: join(dir, "skills", "agent-memory"),
+    skillImportacion: join(dir, "skills", "agent-memory-import"),
     /** Copia de settings.json previa a la primera instalación, para dejarlo byte a byte igual. */
     estado: join(homeDatos(env), "claude-code.json"),
   };
 }
 
-export function origenSkill(): string {
-  return fileURLToPath(new URL("../../skills/agent-memory/", import.meta.url));
+/** Skills que trae el paquete: la de uso de la memoria y la que guía una importación. */
+export const SKILLS = ["agent-memory", "agent-memory-import"] as const;
+export type NombreSkill = (typeof SKILLS)[number];
+
+export function origenSkill(nombre: NombreSkill = "agent-memory"): string {
+  return fileURLToPath(new URL(`../../skills/${nombre}/`, import.meta.url));
+}
+
+function rutaSkill(env: NodeJS.ProcessEnv, nombre: NombreSkill): string {
+  const rutas = rutasClaude(env);
+  return nombre === "agent-memory" ? rutas.skill : rutas.skillImportacion;
+}
+
+/** Una skill en esa carpeta es la propia si su frontmatter declara ese nombre exacto. */
+function esSkillPropia(ruta: string, nombre: NombreSkill): boolean {
+  try {
+    return new RegExp(`^name: ${nombre}$`, "m").test(readFileSync(join(ruta, "SKILL.md"), "utf8"));
+  } catch {
+    return false;
+  }
 }
 
 /** Comillas simples de shell: ninguna ruta se expande ni se parte. */
@@ -144,16 +164,18 @@ export function hookInstalado(env: NodeJS.ProcessEnv): boolean {
 }
 
 export function skillInstalada(env: NodeJS.ProcessEnv): boolean {
-  return existsSync(join(rutasClaude(env).skill, "SKILL.md"));
+  return SKILLS.every((nombre) => existsSync(join(rutaSkill(env, nombre), "SKILL.md")));
 }
 
-/** La skill instalada es la de este paquete: actualizar el paquete no la copia de nuevo. */
+/** Las skills instaladas son las de este paquete: actualizar el paquete no las copia de nuevo. */
 export function skillAlDia(env: NodeJS.ProcessEnv): boolean {
-  try {
-    return readFileSync(join(rutasClaude(env).skill, "SKILL.md"), "utf8") === readFileSync(join(origenSkill(), "SKILL.md"), "utf8");
-  } catch {
-    return false;
-  }
+  return SKILLS.every((nombre) => {
+    try {
+      return readFileSync(join(rutaSkill(env, nombre), "SKILL.md"), "utf8") === readFileSync(join(origenSkill(nombre), "SKILL.md"), "utf8");
+    } catch {
+      return false;
+    }
+  });
 }
 
 function escribirSettings(ruta: string, datos: Settings): void {
@@ -221,11 +243,14 @@ export function instalarClaudeCode(env: NodeJS.ProcessEnv): string[] {
   escribirSettings(rutas.settings, conHookPropio(datos));
   informe.push(`hook SessionStart en ${rutas.settings}`);
 
-  // 3. Skill.
-  rmSync(rutas.skill, { recursive: true, force: true });
-  mkdirSync(dirname(rutas.skill), { recursive: true });
-  cpSync(origenSkill(), rutas.skill, { recursive: true });
-  informe.push(`skill agent-memory en ${rutas.skill}`);
+  // 3. Skills.
+  for (const nombre of SKILLS) {
+    const ruta = rutaSkill(env, nombre);
+    rmSync(ruta, { recursive: true, force: true });
+    mkdirSync(dirname(ruta), { recursive: true });
+    cpSync(origenSkill(nombre), ruta, { recursive: true });
+    informe.push(`skill ${nombre} en ${ruta}`);
+  }
   return informe;
 }
 
@@ -252,9 +277,12 @@ export function desinstalarClaudeCode(env: NodeJS.ProcessEnv): string[] {
   }
   rmSync(rutas.estado, { force: true });
 
-  if (skillInstalada(env) && readFileSync(join(rutas.skill, "SKILL.md"), "utf8").includes("name: agent-memory")) {
-    rmSync(rutas.skill, { recursive: true, force: true });
-    informe.push(`skill quitada de ${rutas.skill}`);
+  for (const nombre of SKILLS) {
+    const ruta = rutaSkill(env, nombre);
+    if (esSkillPropia(ruta, nombre)) {
+      rmSync(ruta, { recursive: true, force: true });
+      informe.push(`skill quitada de ${ruta}`);
+    }
   }
   return informe;
 }

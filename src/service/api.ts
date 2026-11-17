@@ -2,6 +2,9 @@ import { z } from "zod";
 import { ambitoPorDefecto } from "../context.js";
 import { join, isAbsolute } from "node:path";
 import { exportar } from "../export/export.js";
+import { exportarZip } from "../intercambio/exportar.js";
+import { ambitoElegido } from "../intercambio/formato.js";
+import { Importaciones } from "../intercambio/importaciones.js";
 import { TOPE_INDICE_MINIMO, armarIndice } from "../indice/indice.js";
 import { huella } from "../domain/draft.js";
 import { validarTexto, validarTipo } from "../domain/rules.js";
@@ -77,7 +80,26 @@ const ESQUEMAS = {
       ambito_ref: z.string().nullable().optional(),
     })
     .strict(),
-  exportar: z.object({ completa: z.boolean().optional(), destino: z.string().min(1).optional() }).strict(),
+  exportar: z
+    .object({ completa: z.boolean().optional(), destino: z.string().min(1).optional(), zip: z.boolean().optional(), ambitos: z.array(ambitoElegido).max(50).optional() })
+    .strict(),
+  // Intercambio por zip: la CLI importa (deja en espera), el agente resuelve y la persona rechaza una importación entera.
+  importar: z.object({ ruta: z.string().min(1), ambito: ambitoElegido, con_preferencias: z.boolean().optional() }).strict(),
+  importaciones: z
+    .object({ importacion: id.optional(), desde: z.number().int().min(0).optional(), limite: z.number().int().min(1).max(50).optional() })
+    .strict(),
+  resolver_importacion: z
+    .object({
+      importacion: id,
+      entrada: id,
+      accion: z.enum(["crear", "fusionar", "descartar"]),
+      fusionar_con: id.optional(),
+      titulo: z.string().optional(),
+      contenido: z.string().optional(),
+      motivo: z.string().optional(),
+    })
+    .strict(),
+  rechazar_importacion: z.object({ importacion: id, motivo: z.string().optional() }).strict(),
   revision: z.object({}).strict(),
   confirmar_vigencia: z.object({ id }).strict(),
   indice: z.object({ contexto: contextoObligatorio, tope: z.number().int().min(TOPE_INDICE_MINIMO).max(100_000).optional() }).strict(),
@@ -120,6 +142,8 @@ const SOLO_PERSONA: ReadonlySet<Operacion> = new Set([
   "cambiar_ambito",
   "fusionar",
   "confirmar_vigencia",
+  // Rechazar una importación entera es de la persona, desde la bandeja.
+  "rechazar_importacion",
   // Abrir la memoria a otra máquina es de la persona: ningún agente con el token puede hacerlo.
   "remoto_estado",
   "remoto_interruptor",
@@ -156,6 +180,7 @@ export class Api {
   private readonly umbrales: Umbrales;
   private readonly dirExportaciones: string | null;
   private readonly remoto: Remoto | null;
+  private readonly intercambio: Importaciones;
 
   constructor(
     private readonly store: MemoryStore,
@@ -167,6 +192,7 @@ export class Api {
     this.umbrales = opciones.umbralesRevision ?? { diasSinUso: 90, diasSinVerificar: 180 };
     this.dirExportaciones = opciones.dirExportaciones ?? null;
     this.remoto = opciones.remoto ?? null;
+    this.intercambio = new Importaciones(store);
   }
 
   private enlace(): Remoto {
@@ -290,10 +316,12 @@ export class Api {
 
   private pendientes(d: z.infer<typeof ESQUEMAS.pendientes>) {
     const filtrosBandeja = d.contexto ? { contexto: d.contexto, todosLosAmbitos: Boolean(d.todos_los_ambitos) } : {};
+    const origenes = this.intercambio.origenes();
     return {
       entradas: this.store.pendientes(filtrosBandeja).map((e) => ({
         ...vistaEntrada(e),
         reemplazaria: e.reemplazaA === null ? null : { id: e.reemplazaA, titulo: this.store.obtener(e.reemplazaA).titulo },
+        importacion: origenes.get(e.id) ?? null,
       })),
     };
   }
@@ -325,21 +353,58 @@ export class Api {
   }
 
   /**
-   * Exportación a markdown. La CLI elige la carpeta destino (absoluta, nueva o vacía); la
-   * web no elige rutas: cae en una carpeta nueva con fecha bajo la de exportaciones.
+   * Exportación a markdown, o en zip para compartir. La CLI elige el destino (absoluto: una carpeta nueva o vacía, o
+   * un archivo nuevo); la web no elige rutas: cae en una carpeta o un zip nuevos con fecha bajo la de exportaciones.
    */
   private exportar(d: z.infer<typeof ESQUEMAS.exportar>, actor: Actor) {
+    if (d.zip && d.completa) {
+      throw new ReglaError(
+        "zip_sin_completa",
+        "--zip no lleva --completa: quien importa no usa la historia ni los estados, y exportarlos solo amplía lo que se comparte",
+      );
+    }
+    if (d.ambitos?.length && !d.zip) throw new ReglaError("ambitos_sin_zip", "filtrar por ámbito es de la exportación en zip: agregá --zip");
     let destino: string;
     if (actor === "persona" || d.destino === undefined) {
       if (actor === "persona" && d.destino !== undefined) throw new ReglaError("destino_no_permitido", "la web no elige la carpeta: usá «agent-memory export --destino»");
       if (!this.dirExportaciones) throw new ReglaError("sin_destino", "falta la carpeta destino de la exportación");
       const sello = this.store.ahora().toISOString().replace(/[:.]/g, "-");
-      destino = join(this.dirExportaciones, `${sello}${d.completa ? "-completa" : ""}`);
+      destino = join(this.dirExportaciones, `${sello}${d.zip ? ".zip" : d.completa ? "-completa" : ""}`);
     } else {
       if (!isAbsolute(d.destino)) throw new ReglaError("destino_relativo", "el destino de la exportación tiene que ser una ruta absoluta");
       destino = d.destino;
     }
+    if (d.zip) return exportarZip(this.store, destino, (d.ambitos ?? []).map((a) => ({ ambito: a.ambito, ref: a.ref })));
     return exportar(this.store, destino, { completa: Boolean(d.completa) });
+  }
+
+  /** Valida un zip de intercambio y lo deja en espera; la memoria no cambia. La ruta la da la CLI, absoluta. */
+  private importar(d: z.infer<typeof ESQUEMAS.importar>) {
+    if (!isAbsolute(d.ruta)) throw new ReglaError("ruta_relativa", "la ruta del zip tiene que ser absoluta");
+    return this.intercambio.importar(d.ruta, { ambito: d.ambito.ambito, ref: d.ambito.ref }, Boolean(d.con_preferencias));
+  }
+
+  /** Sin importación: las que están en espera. Con ella: sus entradas sin resolver, de a páginas. */
+  private importaciones(d: z.infer<typeof ESQUEMAS.importaciones>) {
+    if (d.importacion === undefined) return { importaciones: this.intercambio.enEspera() };
+    return this.intercambio.entradas(d.importacion, d.desde ?? 0, d.limite ?? 20);
+  }
+
+  private async resolver_importacion(d: z.infer<typeof ESQUEMAS.resolver_importacion>) {
+    const r = await this.intercambio.resolver({
+      importacion: d.importacion,
+      entrada: d.entrada,
+      accion: d.accion,
+      ...(d.fusionar_con !== undefined ? { fusionarCon: d.fusionar_con } : {}),
+      ...(d.titulo !== undefined ? { titulo: d.titulo } : {}),
+      ...(d.contenido !== undefined ? { contenido: d.contenido } : {}),
+      ...(d.motivo !== undefined ? { motivo: d.motivo } : {}),
+    });
+    return { ...r, creada: r.creada ? vistaEntrada(r.creada, false) : null };
+  }
+
+  private rechazar_importacion(d: z.infer<typeof ESQUEMAS.rechazar_importacion>) {
+    return this.intercambio.rechazar(d.importacion, d.motivo);
   }
 
   private revision() {

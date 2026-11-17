@@ -53,3 +53,28 @@ export function redactar(texto: string, patrones: readonly PatronSecreto[] = PAT
   }
   return { texto: salida, redactados: [...redactados] };
 }
+
+/**
+ * Cadenas de aspecto aleatorio (tokens sin formato conocido): un tramo de 24 letras y dígitos o más, sin separadores,
+ * que mezcla letras y dígitos, no es hexadecimal (SHA de git, huellas) y tiene al menos 4 bits de entropía por
+ * carácter. Las palabras unidas por guiones o barras se miden por tramos y quedan cortas. Sirve para avisar antes de
+ * compartir, no para redactar: puede fallar en los dos sentidos.
+ */
+export function tieneCadenaAleatoria(texto: string): boolean {
+  for (const [tramo] of texto.matchAll(/[A-Za-z0-9]{24,}/g)) {
+    if (/^[0-9a-f]+$/i.test(tramo) || !/[A-Za-z]/.test(tramo) || !/\d/.test(tramo)) continue;
+    if (entropia(tramo) >= 4) return true;
+  }
+  return false;
+}
+
+function entropia(texto: string): number {
+  const cuentas = new Map<string, number>();
+  for (const c of texto) cuentas.set(c, (cuentas.get(c) ?? 0) + 1);
+  let bits = 0;
+  for (const n of cuentas.values()) {
+    const p = n / texto.length;
+    bits -= p * Math.log2(p);
+  }
+  return bits;
+}

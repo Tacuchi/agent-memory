@@ -78,10 +78,10 @@ afterAll(async () => {
 });
 
 describe("agent-memory mcp con un cliente MCP genérico", () => {
-  it("lista exactamente las once herramientas memory_*", async () => {
+  it("lista exactamente las trece herramientas memory_*", async () => {
     const { tools } = await cliente.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...HERRAMIENTAS].sort());
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(13);
     for (const t of tools) expect(t.description, t.name).toBeTruthy();
   });
 

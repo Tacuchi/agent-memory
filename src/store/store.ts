@@ -121,7 +121,8 @@ export class MemoryStore {
 
   // ── Escritura ────────────────────────────────────────────────────────────────
 
-  async crear(nueva: NuevaEntrada, origen: Origen): Promise<ResultadoEscritura> {
+  /** `enLaMismaTransaccion` corre con la entrada ya insertada: si lanza, la creación se revierte entera. */
+  async crear(nueva: NuevaEntrada, origen: Origen, enLaMismaTransaccion?: (id: number) => void): Promise<ResultadoEscritura> {
     const tipo = reglas.validarTipo(nueva.tipo);
     const titulo = this.redactarCampo(reglas.validarTexto("titulo", nueva.titulo));
     const contenido = this.redactarCampo(reglas.validarTexto("contenido", nueva.contenido));
@@ -170,6 +171,7 @@ export class MemoryStore {
       this.escribirVector(id, vector);
       for (const destino of nueva.relacionadas ?? []) this.insertarRelacion(id, destino);
       this.aplicarReemplazo(creada, ahora, origen.actor);
+      enLaMismaTransaccion?.(id);
       return this.obtener(id);
     });
     return { entrada, redactados: unir(titulo.redactados, contenido.redactados) };

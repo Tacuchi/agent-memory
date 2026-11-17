@@ -3,7 +3,7 @@ import { AMBITOS, TIPOS, mensajeError, type Cliente, type Pendiente } from "../a
 import type { Navegar } from "../App";
 import { FormRechazo, HojaEntrada, HojaInferior, useEsMovil, usePresionLarga } from "../movil";
 import { mover, useAtajos } from "../teclado";
-import { Aviso, extracto, fecha, lugar } from "./comunes";
+import { Aviso, extracto, fecha, lugar, textoImportacion } from "./comunes";
 import { VistaPrevia } from "./VistaPrevia";
 
 type Operacion = "aprobar" | "rechazar";
@@ -40,13 +40,16 @@ export function Bandeja({
 }) {
   const esMovil = useEsMovil();
   const [seleccionando, setSeleccionando] = useState(false);
-  const [hoja, setHoja] = useState<"entrada" | "lote" | null>(null);
+  const [hoja, setHoja] = useState<"entrada" | "lote" | "importacion" | null>(null);
   const [hojaId, setHojaId] = useState<number | null>(null);
   const [pendientes, setPendientes] = useState<Pendiente[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ambito, setAmbito] = useState("");
   const [referencia, setReferencia] = useState<Referencia | null>(null);
   const [tipo, setTipo] = useState("");
+  const [importacion, setImportacion] = useState("");
+  const [motivoImportacion, setMotivoImportacion] = useState("");
+  const [hecho, setHecho] = useState<string | null>(null);
   const [seleccionadas, setSeleccionadas] = useState<number[]>([]);
   const [motivo, setMotivo] = useState("");
   const [procesando, setProcesando] = useState(false);
@@ -60,7 +63,12 @@ export function Bandeja({
     clave: claveAmbito(p), etiqueta: `${p.ambito} · ${p.ambito_ref}`,
   }]));
   if (referencia) referencias.set(referencia.clave, referencia);
-  const visibles = delAmbito.filter((p) => (!referencia || claveAmbito(p) === referencia.clave) && (!tipo || p.tipo === tipo));
+  const importaciones = new Map((pendientes ?? []).filter((p) => p.importacion).map((p) => [String(p.importacion!.id), p.importacion!]));
+  const elegida = importaciones.get(importacion) ?? null;
+  const deLaImportacion = elegida ? (pendientes ?? []).filter((p) => p.importacion?.id === elegida.id) : [];
+  const visibles = delAmbito.filter(
+    (p) => (!referencia || claveAmbito(p) === referencia.clave) && (!tipo || p.tipo === tipo) && (!elegida || p.importacion?.id === elegida.id),
+  );
   const elegidas = visibles.filter((p) => seleccionadas.includes(p.id));
   const todas = visibles.length > 0 && elegidas.length === visibles.length;
   const correctas = resultados.filter((r) => r.estado === "aprobada" || r.estado === "rechazada").length;
@@ -115,6 +123,30 @@ export function Bandeja({
     }
   }
 
+  /** Rechaza la importación entera: sus pendientes y lo que siga en espera, con un solo motivo. */
+  async function rechazarImportacion(id: number, motivoRechazo: string) {
+    const motivoLimpio = motivoRechazo.trim();
+    if (enCurso.current || !motivoLimpio) return;
+    enCurso.current = true;
+    setProcesando(true);
+    setError(null);
+    setHecho(null);
+    try {
+      const r = await cliente<{ rechazadas: number; descartadas: number }>("rechazar_importacion", { importacion: id, motivo: motivoLimpio });
+      setHecho(`Importación ${id} rechazada: ${r.rechazadas} pendientes rechazadas y ${r.descartadas} en espera descartadas.`);
+      setImportacion("");
+      setMotivoImportacion("");
+      await cargar();
+      alCambiar?.();
+    } catch (e) {
+      setError(`No se pudo rechazar la importación ${id}: ${mensajeError(e)}`);
+    } finally {
+      setSeleccionadas([]);
+      setProcesando(false);
+      enCurso.current = false;
+    }
+  }
+
   const indice = Math.min(foco, Math.max(0, visibles.length - 1));
   const enfocada = visibles[indice] ?? null;
 
@@ -160,6 +192,37 @@ export function Bandeja({
           {TIPOS.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </label>
+      {importaciones.size > 0 && (
+        <label>
+          Importación
+          <select disabled={procesando} value={importacion} onChange={(e) => filtrar(() => setImportacion(e.target.value))}>
+            <option value="">todas</option>
+            {[...importaciones.values()].map((o) => <option key={o.id} value={String(o.id)}>{textoImportacion(o)}</option>)}
+          </select>
+        </label>
+      )}
+    </div>
+  );
+
+  const importacionJsx = elegida && (
+    <div className="lote" role="group" aria-label={`Importación ${elegida.id}`}>
+      <span className="meta">{textoImportacion(elegida)} · {deLaImportacion.length} pendientes. Rechazarla descarta también lo que siga en espera.</span>
+      <button type="button" className="primario" disabled={procesando || deLaImportacion.length === 0} onClick={() => void actuar("aprobar", deLaImportacion)}>
+        Aprobar importación
+      </button>
+      <label>
+        Motivo del rechazo de la importación
+        <input type="text" disabled={procesando} value={motivoImportacion} onChange={(e) => setMotivoImportacion(e.target.value)} />
+      </label>
+      <button
+        type="button"
+        className="peligro"
+        disabled={procesando || !motivoImportacion.trim()}
+        title={!motivoImportacion.trim() ? "Escribí un motivo para rechazar" : undefined}
+        onClick={() => void rechazarImportacion(elegida.id, motivoImportacion)}
+      >
+        Rechazar importación
+      </button>
     </div>
   );
 
@@ -170,6 +233,11 @@ export function Bandeja({
           <Aviso texto={error} />
           <button type="button" disabled={procesando} onClick={() => { setError(null); void cargar(); }}>Recargar pendientes</button>
         </div>
+      )}
+      {hecho && (
+        <p className="cuerpo" role="status">
+          {hecho}
+        </p>
       )}
       {resultados.length > 0 && (
         <section className="resultado" aria-label="Resultado de la acción">
@@ -243,9 +311,22 @@ export function Bandeja({
         )}
         {!encabezadoMovil && !seleccionando && (
           <details className="filtros-movil">
-            <summary>Filtros{ambito || referencia || tipo ? " · activos" : ""}</summary>
+            <summary>Filtros{ambito || referencia || tipo || elegida ? " · activos" : ""}</summary>
             {filtrosJsx}
           </details>
+        )}
+        {elegida && !seleccionando && (
+          <div className="barra-lote">
+            <span className="meta">{textoImportacion(elegida)} · {deLaImportacion.length} pendientes</span>
+            <div>
+              <button type="button" className="peligro" disabled={procesando} onClick={() => setHoja("importacion")}>
+                Rechazar importación…
+              </button>
+              <button type="button" className="primario" disabled={procesando || deLaImportacion.length === 0} onClick={() => void actuar("aprobar", deLaImportacion)}>
+                Aprobar importación
+              </button>
+            </div>
+          </div>
         )}
         {avisosJsx}
         <ul className="lista" aria-label="Cola de pendientes">
@@ -307,6 +388,19 @@ export function Bandeja({
             cerrar={cerrarHoja}
           />
         )}
+        {hoja === "importacion" && elegida && (
+          <HojaInferior etiqueta="Rechazar importación" cerrar={cerrarHoja}>
+            <FormRechazo
+              titulo={`Rechazar la importación ${elegida.id}: sus ${deLaImportacion.length} pendientes y lo que siga en espera`}
+              ocupado={procesando}
+              cancelar={cerrarHoja}
+              rechazar={(m) => {
+                cerrarHoja();
+                void rechazarImportacion(elegida.id, m);
+              }}
+            />
+          </HojaInferior>
+        )}
         {hoja === "lote" && (
           <HojaInferior etiqueta="Rechazar seleccionadas" cerrar={cerrarHoja}>
             <FormRechazo
@@ -360,6 +454,7 @@ export function Bandeja({
             Rechazar seleccionadas
           </button>
         </div>
+        {importacionJsx}
       </section>
 
       <section className="columna" aria-labelledby="titulo-cola">
@@ -431,6 +526,7 @@ function FilaPendiente({
       </button>
       <span className="lateral">#{p.id} · {fecha(p.actualizada_en)}</span>
       <span className="extracto">{lugar(p)} — {extracto(p.contenido)}</span>
+      {p.importacion && <span className="extracto">{textoImportacion(p.importacion)}</span>}
       {p.reemplazaria && (
         <span className="extracto">
           Reemplazaría a{" "}
@@ -484,7 +580,7 @@ function FilaMovil({
       )}
       <span className="titulo">{p.titulo}</span>
       <span className="lateral">#{p.id}</span>
-      <span className="extracto">{lugar(p)}</span>
+      <span className="extracto">{lugar(p)}{p.importacion ? ` · ${textoImportacion(p.importacion)}` : ""}</span>
     </button>
   );
 }

@@ -11,6 +11,7 @@ import { cargarConfig } from "./config.js";
 import { resolverContexto } from "./context.js";
 import { diagnosticar, formatearHallazgos } from "./doctor.js";
 import { invocacion } from "./ejecutable.js";
+import { leerAmbito, textoAmbito, type AmbitoElegido } from "./intercambio/formato.js";
 import { traerModelo } from "./model-fetch.js";
 import { servirMcp } from "./mcp/server.js";
 import { arrancarServicio } from "./service/app.js";
@@ -41,11 +42,18 @@ memoria:
   export                    exporta a markdown, un archivo por entrada (las activas)
          [--completa]       todas las entradas, con su historia
          [--destino <dir>]  carpeta nueva o vacía (por defecto, ~/.agent-memory/exportaciones/)
+         [--zip]            un zip para compartir: las activas sin estado de trabajo, con sus relaciones
+                            (--destino es entonces un archivo nuevo)
+         [--ambito <a>]     con --zip, solo ese ámbito: global, proyecto:<nombre> o repo:<id>; se repite
+         [--proyecto <p>]   con --zip, atajo de --ambito proyecto:<p>
+  import <zip> --ambito <a> deja un zip de agent-memory en espera para que tu agente lo fusione; todo lo
+                            que entra queda pendiente y en el ámbito elegido (global, proyecto:<nombre> o repo:<id>)
+         [--con-preferencias] suma las preferencias, que por defecto quedan fuera
   purge <id>                borra para siempre una entrada y toda su historia; pide escribir el id
 
 agentes:
   mcp                       servidor MCP por stdio con las herramientas memory_*
-  install claude-code       conecta Claude Code: MCP, hook de inicio y skill
+  install claude-code       conecta Claude Code: MCP, hook de inicio y skills (uso e importación)
   uninstall claude-code     quita exactamente lo que agregó install
   hook session-start        hook SessionStart de Claude Code (lo llama Claude Code)
 
@@ -111,6 +119,8 @@ export async function main(argv: string[]): Promise<number> {
       return search(resto);
     case "export":
       return exportarCli(resto);
+    case "import":
+      return importarCli(resto);
     case "purge":
       return purge(resto);
     case "install":
@@ -364,20 +374,99 @@ async function exportarCli(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { completa: { type: "boolean" }, destino: { type: "string" } },
+    options: {
+      completa: { type: "boolean" },
+      destino: { type: "string" },
+      zip: { type: "boolean" },
+      ambito: { type: "string", multiple: true },
+      proyecto: { type: "string" },
+    },
   });
   if (positionals.length) return uso(`argumentos de más: ${positionals.join(" ")}`);
-  const config = cargarConfig();
-  const r = await arrancarSeparado(config, ESPERA_START_MS);
-  if (!r.salud) {
-    process.stderr.write(`agent-memory no respondió en ${ESPERA_START_MS / 1000} s; mirá ${config.logPath} o corré «agent-memory doctor»\n`);
-    return 1;
+  let ambitos: AmbitoElegido[];
+  try {
+    ambitos = [...(values.ambito ?? []).map(leerAmbito), ...(values.proyecto !== undefined ? [leerAmbito(`proyecto:${values.proyecto}`)] : [])];
+  } catch (error) {
+    return uso((error as Error).message);
   }
-  const hecho = await new ClienteServicio(config).llamar<{ destino: string; archivos: number }>("exportar", {
+  if (ambitos.length && !values.zip) return uso("--ambito y --proyecto filtran la exportación en zip: agregá --zip");
+  const config = cargarConfig();
+  if (!(await servicioArriba(config))) return 1;
+  const hecho = await new ClienteServicio(config).llamar<{
+    destino: string;
+    archivos: number;
+    relaciones?: number;
+    avisos?: { id: number; titulo: string; clases: string[] }[];
+  }>("exportar", {
     ...(values.completa ? { completa: true } : {}),
+    ...(values.zip ? { zip: true } : {}),
+    ...(ambitos.length ? { ambitos } : {}),
     ...(values.destino ? { destino: resolve(process.cwd(), values.destino) } : {}),
   });
-  return salida(`${hecho.archivos} entradas exportadas${values.completa ? " con su historia" : " (activas)"} en ${hecho.destino}`);
+  if (!values.zip) return salida(`${hecho.archivos} entradas exportadas${values.completa ? " con su historia" : " (activas)"} en ${hecho.destino}`);
+  for (const a of hecho.avisos ?? []) {
+    process.stderr.write(`aviso: #${a.id} «${a.titulo}» parece traer un secreto (${a.clases.join(", ")}): revisala antes de compartir el zip\n`);
+  }
+  return salida(`${hecho.archivos} entradas y ${hecho.relaciones ?? 0} relaciones exportadas en ${hecho.destino} (zip para compartir)`);
+}
+
+/** Importación: el servicio valida el zip y lo deja en espera; la fusión la hace el agente. */
+async function importarCli(args: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { ambito: { type: "string" }, "con-preferencias": { type: "boolean" } },
+  });
+  if (positionals.length !== 1) return uso("uso: agent-memory import <zip> --ambito <global | proyecto:<nombre> | repo:<id>>");
+  if (values.ambito === undefined) {
+    return uso("import necesita --ambito: global, proyecto:<nombre> o repo:<id> (el ámbito lo elegís vos, nunca el zip)");
+  }
+  let ambito: AmbitoElegido;
+  try {
+    ambito = leerAmbito(values.ambito);
+  } catch (error) {
+    return uso((error as Error).message);
+  }
+  const config = cargarConfig();
+  if (!(await servicioArriba(config))) return 1;
+  const r = await new ClienteServicio(config).llamar<{
+    importacion: number | null;
+    archivo: string;
+    en_espera: number;
+    fuera: Record<"proyecto" | "vencida" | "tipo_desconocido" | "preferencia", number>;
+  }>("importar", {
+    ruta: resolve(process.cwd(), positionals[0] as string),
+    ambito,
+    ...(values["con-preferencias"] ? { con_preferencias: true } : {}),
+  });
+  const causas = [
+    r.fuera.proyecto ? `${r.fuera.proyecto} de estado de trabajo (proyecto)` : null,
+    r.fuera.vencida ? `${r.fuera.vencida} vencidas` : null,
+    r.fuera.tipo_desconocido ? `${r.fuera.tipo_desconocido} de un tipo que esta versión no conoce` : null,
+    r.fuera.preferencia ? `${r.fuera.preferencia} preferencias (sumalas con --con-preferencias)` : null,
+  ].filter((c): c is string => c !== null);
+  const totalFuera = Object.values(r.fuera).reduce((a, b) => a + b, 0);
+  const lineas: string[] = [];
+  if (r.importacion === null) {
+    lineas.push(`Nada de ${r.archivo} quedó en espera.`);
+  } else {
+    lineas.push(`Importación ${r.importacion} en espera: ${r.en_espera} entradas de ${r.archivo}, en el ámbito ${textoAmbito(ambito)}.`);
+  }
+  if (totalFuera) lineas.push(`Quedaron fuera ${totalFuera}: ${causas.join("; ")}.`);
+  if (r.importacion !== null) {
+    lineas.push(
+      `Siguiente paso: pedile a tu agente «procesá la importación ${r.importacion} de agent-memory». Lo que cree o fusione queda pendiente: lo aprobás o lo rechazás en la bandeja («agent-memory open»).`,
+    );
+  }
+  return salida(lineas.join("\n"));
+}
+
+/** Arranca el servicio si hace falta; si no responde, lo dice y devuelve false. */
+async function servicioArriba(config: ReturnType<typeof cargarConfig>): Promise<boolean> {
+  const r = await arrancarSeparado(config, ESPERA_START_MS);
+  if (r.salud) return true;
+  process.stderr.write(`agent-memory no respondió en ${ESPERA_START_MS / 1000} s; mirá ${config.logPath} o corré «agent-memory doctor»\n`);
+  return false;
 }
 
 /**

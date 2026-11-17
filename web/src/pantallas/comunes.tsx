@@ -46,6 +46,11 @@ export function lugar(e: Pick<Entrada, "tipo" | "ambito" | "ambito_ref">): strin
   return `${e.tipo} · ${e.ambito}${e.ambito_ref ? ` (${e.ambito_ref})` : ""}`;
 }
 
+/** De qué importación salió una entrada: número, archivo y día. */
+export function textoImportacion(o: { id: number; archivo: string; importada_en: string }): string {
+  return `Importación ${o.id} · ${o.archivo} · ${fecha(o.importada_en)}`;
+}
+
 /** Primera línea con texto del contenido, para leer de qué trata sin abrirla. */
 export function extracto(contenido: string | undefined): string {
   return (contenido ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";
