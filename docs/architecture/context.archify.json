@@ -1,0 +1,209 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Context: agent-memory",
+    "locale": "en",
+    "output": "docs/architecture/context.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Tacuchi/agent-memory.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "326eed65dcd2ae37180d7b9f26ff8b9806151f05"
+    }
+  },
+  "components": [
+    {
+      "id": "person",
+      "type": "external",
+      "label": "You",
+      "sublabel": "review and search",
+      "icon": "person",
+      "pos": [
+        40,
+        60
+      ],
+      "size": [
+        120,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/cli.ts",
+          "line": 102,
+          "end_line": 126
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "Coding agent",
+      "sublabel": "Claude Code",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        120,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/claude-code/install.ts",
+          "line": 11,
+          "end_line": 13
+        }
+      ]
+    },
+    {
+      "id": "am",
+      "type": "backend",
+      "label": "agent-memory",
+      "sublabel": "local memory for agents",
+      "pos": [
+        320,
+        60
+      ],
+      "size": [
+        180,
+        200
+      ],
+      "sources": [
+        {
+          "path": "README.md",
+          "line": 1,
+          "end_line": 7
+        }
+      ]
+    },
+    {
+      "id": "hf",
+      "type": "external",
+      "label": "Hugging Face",
+      "sublabel": "hosts the model",
+      "pos": [
+        650,
+        60
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/model-fetch.ts",
+          "line": 14,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "cloud",
+      "label": "Relay",
+      "sublabel": "optional, self-hosted",
+      "pos": [
+        650,
+        200
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/remoto/rele.ts",
+          "line": 1,
+          "end_line": 9
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "type": "external",
+      "label": "Another machine",
+      "sublabel": "read-only",
+      "pos": [
+        940,
+        200
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/remoto/transporte.ts",
+          "line": 2,
+          "end_line": 3
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "person-am",
+      "from": "person",
+      "to": "am",
+      "label": "web UI and CLI"
+    },
+    {
+      "id": "agent-am",
+      "from": "agent",
+      "to": "am",
+      "label": "hook and MCP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "am-hf",
+      "from": "am",
+      "to": "hf",
+      "label": "one-time download",
+      "variant": "dashed"
+    },
+    {
+      "id": "am-relay",
+      "from": "am",
+      "to": "relay",
+      "label": "encrypted channel",
+      "variant": "security"
+    },
+    {
+      "id": "relay-other",
+      "from": "relay",
+      "to": "other",
+      "label": "forwards ciphertext",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "When each connection happens",
+      "items": [
+        "Hugging Face: only when you run model fetch",
+        "Relay: only with remote access turned on",
+        "Remote access is off by default"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "What it is not",
+      "items": [
+        "No language model: the model only computes vectors",
+        "No sync: the remote link is read-only",
+        "Nothing is validated without you"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Review",
+      "items": [
+        "Version 0.6.1, commit 326eed6",
+        "Reviewed on 2026-11-17"
+      ]
+    }
+  ]
+}

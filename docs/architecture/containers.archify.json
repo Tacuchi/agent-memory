@@ -1,0 +1,510 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Containers: agent-memory",
+    "locale": "en",
+    "output": "docs/architecture/containers.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Tacuchi/agent-memory.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "326eed65dcd2ae37180d7b9f26ff8b9806151f05"
+    }
+  },
+  "components": [
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "Coding agent",
+      "sublabel": "Claude Code",
+      "pos": [
+        40,
+        168
+      ],
+      "size": [
+        120,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/claude-code/install.ts",
+          "line": 11,
+          "end_line": 13
+        }
+      ]
+    },
+    {
+      "id": "person",
+      "type": "external",
+      "label": "You",
+      "sublabel": "browser and terminal",
+      "icon": "person",
+      "pos": [
+        40,
+        308
+      ],
+      "size": [
+        120,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/cli.ts",
+          "line": 102,
+          "end_line": 126
+        }
+      ]
+    },
+    {
+      "id": "hook",
+      "type": "backend",
+      "label": "SessionStart hook",
+      "sublabel": "index at start",
+      "pos": [
+        250,
+        68
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/claude-code/hook.ts",
+          "line": 22,
+          "end_line": 44
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "MCP server",
+      "sublabel": "one per session",
+      "pos": [
+        250,
+        168
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/mcp/server.ts",
+          "line": 242,
+          "end_line": 244
+        },
+        {
+          "path": "src/mcp/server.ts",
+          "line": 69,
+          "end_line": 84
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "CLI",
+      "sublabel": "agent-memory …",
+      "pos": [
+        250,
+        308
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/cli.ts",
+          "line": 102,
+          "end_line": 126
+        }
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Web UI",
+      "sublabel": "React · review",
+      "pos": [
+        250,
+        408
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "web/src/App.tsx",
+          "line": 1,
+          "end_line": 12
+        },
+        {
+          "path": "src/service/server.ts",
+          "line": 53,
+          "end_line": 57
+        }
+      ]
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "Local service",
+      "sublabel": "127.0.0.1:47821 · token",
+      "pos": [
+        490,
+        68
+      ],
+      "size": [
+        150,
+        400
+      ],
+      "sources": [
+        {
+          "path": "src/service/server.ts",
+          "line": 33,
+          "end_line": 36
+        },
+        {
+          "path": "src/service/server.ts",
+          "line": 46,
+          "end_line": 70
+        },
+        {
+          "path": "src/cli.ts",
+          "line": 155,
+          "end_line": 167
+        }
+      ]
+    },
+    {
+      "id": "embeddings",
+      "type": "backend",
+      "label": "Embedding model",
+      "sublabel": "granite 97M · not an LLM",
+      "pos": [
+        730,
+        68
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/search/models.ts",
+          "line": 48,
+          "end_line": 48
+        },
+        {
+          "path": "src/search/embedder.ts",
+          "line": 67,
+          "end_line": 79
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "type": "backend",
+      "label": "Hybrid search",
+      "sublabel": "text + vectors",
+      "pos": [
+        730,
+        168
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/search/search.ts",
+          "line": 52,
+          "end_line": 56
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "SQLite database",
+      "sublabel": "FTS5 · sqlite-vec",
+      "pos": [
+        730,
+        268
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/db/driver.ts",
+          "line": 1,
+          "end_line": 8
+        },
+        {
+          "path": "src/db/schema.ts",
+          "line": 61,
+          "end_line": 77
+        }
+      ]
+    },
+    {
+      "id": "remote",
+      "type": "security",
+      "label": "Remote access",
+      "sublabel": "off by default",
+      "pos": [
+        730,
+        398
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/service/app.ts",
+          "line": 44,
+          "end_line": 46
+        },
+        {
+          "path": "src/remoto/canal.ts",
+          "line": 7,
+          "end_line": 22
+        }
+      ]
+    },
+    {
+      "id": "hf",
+      "type": "external",
+      "label": "Hugging Face",
+      "sublabel": "one-time download",
+      "pos": [
+        1070,
+        68
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/model-fetch.ts",
+          "line": 14,
+          "end_line": 17
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "type": "cloud",
+      "label": "Relay",
+      "sublabel": "optional, self-hosted",
+      "pos": [
+        1070,
+        398
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/remoto/rele.ts",
+          "line": 1,
+          "end_line": 9
+        },
+        {
+          "path": "deploy/relay/Dockerfile",
+          "line": 9,
+          "end_line": 20
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "type": "external",
+      "label": "Another machine",
+      "sublabel": "read-only",
+      "pos": [
+        1070,
+        508
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/remoto/transporte.ts",
+          "line": 2,
+          "end_line": 3
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "One machine",
+      "wraps": [
+        "hook",
+        "mcp",
+        "cli",
+        "web",
+        "service",
+        "embeddings",
+        "search",
+        "db",
+        "remote"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Process: agent-memory serve",
+      "wraps": [
+        "service",
+        "embeddings",
+        "search",
+        "db",
+        "remote"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "agent-mcp",
+      "from": "agent",
+      "to": "mcp",
+      "label": "stdio",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-hook",
+      "from": "agent",
+      "to": "hook",
+      "label": "at start"
+    },
+    {
+      "id": "person-cli",
+      "from": "person",
+      "to": "cli",
+      "label": "commands"
+    },
+    {
+      "id": "person-web",
+      "from": "person",
+      "to": "web",
+      "label": "browser"
+    },
+    {
+      "id": "hook-service",
+      "from": "hook",
+      "to": "service"
+    },
+    {
+      "id": "mcp-service",
+      "from": "mcp",
+      "to": "service",
+      "label": "HTTP + token",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cli-service",
+      "from": "cli",
+      "to": "service"
+    },
+    {
+      "id": "web-service",
+      "from": "web",
+      "to": "service"
+    },
+    {
+      "id": "service-search",
+      "from": "service",
+      "to": "search"
+    },
+    {
+      "id": "search-embeddings",
+      "from": "search",
+      "to": "embeddings"
+    },
+    {
+      "id": "search-db",
+      "from": "search",
+      "to": "db",
+      "label": "SQL"
+    },
+    {
+      "id": "service-remote",
+      "from": "service",
+      "to": "remote"
+    },
+    {
+      "id": "remote-relay",
+      "from": "remote",
+      "to": "relay",
+      "label": "outbound WebSocket",
+      "variant": "security"
+    },
+    {
+      "id": "relay-other",
+      "from": "relay",
+      "to": "other",
+      "label": "ciphertext",
+      "variant": "security"
+    },
+    {
+      "id": "embeddings-hf",
+      "from": "embeddings",
+      "to": "hf",
+      "label": "one-time download",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Rules that hold",
+      "items": [
+        "The service listens on 127.0.0.1 only",
+        "Hook, MCP server and web UI always go through the service",
+        "The model never reaches the network in normal use",
+        "The relay never reads or stores content"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Defaults",
+      "items": [
+        "Port 47821 (AGENT_MEMORY_PORT)",
+        "Data in ~/.agent-memory (AGENT_MEMORY_HOME)",
+        "Remote access is off",
+        "The service does not stop by itself: agent-memory stop"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "What it is not",
+      "items": [
+        "No language model: the model only computes vectors",
+        "No sync: the remote link is read-only"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Review",
+      "items": [
+        "Version 0.6.1, commit 326eed6",
+        "Reviewed on 2026-11-17"
+      ]
+    }
+  ]
+}

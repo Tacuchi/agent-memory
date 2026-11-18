@@ -2,7 +2,7 @@
 
 You only need a relay when your two machines cannot reach each other directly: for example, a work laptop that is not
 on your Tailscale tailnet or your home network. If they can, use the direct connection instead (see the main
-[README](../../README.md#choose-how-to-connect)).
+[README](../../docs/remote-link.md#choose-how-to-connect)).
 
 The relay is a published image, `ghcr.io/tacuchi/agent-memory-relay`. The platform runs it, gives it HTTPS and keeps
 the key as a secret. You do not build anything, set up a reverse proxy, get certificates or add rate limiting: the
