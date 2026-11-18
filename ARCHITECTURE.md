@@ -26,7 +26,7 @@ What it is not:
 
 ![Context diagram of agent-memory](docs/architecture/context.svg)
 
-[Interactive version](docs/architecture/context.html): download the file and open it in a browser.
+[Interactive version](https://tacuchi.github.io/agent-memory/architecture/context.html).
 
 | External interface | Direction | When it happens |
 |---|---|---|
@@ -39,7 +39,7 @@ What it is not:
 
 ![Container diagram of agent-memory](docs/architecture/containers.svg)
 
-[Interactive version](docs/architecture/containers.html): download the file and open it in a browser.
+[Interactive version](https://tacuchi.github.io/agent-memory/architecture/containers.html).
 
 | Block | Responsibility | Code |
 |---|---|---|
