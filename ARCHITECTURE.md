@@ -1,6 +1,6 @@
 # Architecture of agent-memory
 
-Reviewed on 2026-11-17 against version 0.6.1 (commit `326eed6`).
+Reviewed on 2026-11-17 against version 0.6.1 (commit `59dd192`).
 
 This document gives the overview: which parts exist, how they talk to each other and which rules never break. It does not describe every module or the screens of the web UI. All values are defaults; nothing here was measured on a particular machine.
 
@@ -144,15 +144,15 @@ Not recorded yet:
 
 ## Appendix: evidence
 
-Line numbers refer to commit `326eed6`, including those of `README.md` as it was in that commit. A tool will maintain this appendix; the text above does not link to the code on purpose.
+Line numbers refer to commit `59dd192`. Every row cites code or configuration; the text above does not link to the code on purpose.
 
 | Section | Evidence |
 |---|---|
-| 1. Goals | `src/claude-code/hook.ts:22-44`, `src/config.ts:11`, `src/search/search.ts:52-56`, `src/remoto/canal.ts:7-22`, `src/remoto/rele.ts:1-9`, `README.md:58-73` |
+| 1. Goals | `src/claude-code/hook.ts:22-44`, `src/config.ts:11`, `src/search/search.ts:52-56`, `src/remoto/canal.ts:7-22`, `src/remoto/rele.ts:1-9`, `src/domain/cerco.ts:10-16`, `src/mcp/server.ts:47-52` |
 | 2. Context | `src/model-fetch.ts:14-17`, `src/service/app.ts:44-46`, `src/remoto/transporte.ts:2-3` |
 | 3. Blocks | `src/cli.ts:102-126`, `src/mcp/server.ts:69-244`, `src/service/server.ts:33-70`, `src/db/schema.ts:15-223`, `web/src/App.tsx:1-12` |
-| 3. Rules | `src/service/server.ts:11`, `src/client.ts:16-51`, `src/cli.ts:476-487`, `src/search/embedder.ts:67-79`, `README.md:79-80`, `src/remoto/rele.ts:6-7` |
-| 4. Runtime | `src/claude-code/hook.ts:22-44`, `src/config.ts:9`, `src/search/search.ts:52-56`, `README.md:203-206` |
-| 5. Deployment | `src/cli.ts:155-167`, `src/config.ts:7`, `README.md:289-298`, `deploy/relay/Dockerfile:9-20` |
-| 6. Privacy | `README.md:77-89`, `README.md:174-226`. A search for telemetry and external URLs in `src/` found none |
+| 3. Rules | `src/service/server.ts:11`, `src/client.ts:16-51`, `src/cli.ts:476-487`, `src/search/embedder.ts:67-79`, `src/mcp/server.ts:36-38`, `src/remoto/rele.ts:6-7` |
+| 4. Runtime | `src/claude-code/hook.ts:22-44`, `src/config.ts:9`, `src/search/search.ts:52-56`, `src/remoto/remoto.ts:1076-1079` |
+| 5. Deployment | `src/cli.ts:155-167`, `src/config.ts:7`, `src/config.ts:49-51`, `src/config.ts:56`, `src/search/models.ts:73-75`, `src/claude-code/install.ts:23-25`, `src/remoto/directo.ts:20`, `deploy/relay/Dockerfile:9-20` |
+| 6. Privacy | `src/remoto/datos.ts:10-12`, `src/remoto/datos.ts:160-162`, `src/remoto/datos.ts:386-390`, `src/remoto/datos.ts:491-496`, `src/remoto/rele-estado.ts:1-6`, `src/remoto/canal.ts:7-22`. A search for telemetry and external URLs in `src/` found none |
 | 7. Decisions | `src/db/driver.ts:4-8`, `src/search/models.ts:25-30`, `src/search/models.ts:44-48` |

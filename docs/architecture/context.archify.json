@@ -10,7 +10,7 @@
       "url": "https://github.com/Tacuchi/agent-memory.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "326eed65dcd2ae37180d7b9f26ff8b9806151f05"
+      "revision": "59dd192e2c2f9ce1932d0a09c99652a65a1fd71a"
     }
   },
   "components": [
@@ -72,9 +72,14 @@
       ],
       "sources": [
         {
-          "path": "README.md",
-          "line": 1,
-          "end_line": 7
+          "path": "package.json",
+          "line": 2,
+          "end_line": 2
+        },
+        {
+          "path": "package.json",
+          "line": 4,
+          "end_line": 4
         }
       ]
     },
