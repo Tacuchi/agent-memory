@@ -2,6 +2,7 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
+    "feedback_links": false,
     "title": "Context: agent-memory",
     "locale": "en",
     "output": "docs/architecture/context.html",
@@ -59,6 +60,7 @@
     },
     {
       "id": "am",
+      "href": "containers.html",
       "type": "backend",
       "label": "agent-memory",
       "sublabel": "local memory for agents",
