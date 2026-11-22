@@ -103,7 +103,7 @@ export function crearServidorMcp(cliente: ClienteServicio, contexto: Contexto): 
     "memory_create",
     {
       description:
-        "Crea una entrada. Lo que crea el agente nace pendiente; con la huella de un borrador que la persona confirmó tal cual, nace validado. Nace en el proyecto actual salvo que se elija repo o global. Busca antes de crear para no duplicar.",
+        "Crea una entrada. Lo que crea el agente nace pendiente; con la huella de un borrador que la persona confirmó tal cual, nace validado. Nace en el proyecto actual salvo que se elija repo o global. Busca antes de crear para no duplicar. La respuesta (también la del borrador) trae 'parecidas': hasta 3 entradas vigentes cercanas en significado, con su similitud; si una ya lo cubre, edítala en vez de crear otra. null = no se pudo comprobar (sin modelo).",
       inputSchema: {
         tipo: z.enum(TIPOS),
         titulo: z.string(),

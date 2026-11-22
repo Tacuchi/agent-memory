@@ -74,6 +74,9 @@ encuentran con `memory_search`. El detalle se pide con `memory_get`.
 - Antes de `memory_create`, buscá con `memory_search` si ya hay una entrada del mismo tema.
 - Si existe, actualizala en sitio con `memory_edit` en vez de duplicarla; si la nueva reemplaza a
   una vieja, usá `reemplaza_a`.
+- El borrador y la creación devuelven `parecidas`: entradas vigentes cercanas en significado. Si
+  alguna ya cubre lo que ibas a guardar, proponé editarla en vez de crear; si no, seguí. Mostrale a
+  la persona las parecidas junto al borrador.
 
 ## Qué no se guarda
 

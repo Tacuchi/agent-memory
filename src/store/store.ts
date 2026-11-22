@@ -66,6 +66,23 @@ export interface Lectura {
   relaciones: Relacion[];
 }
 
+/** Entrada vigente cercana en significado a un texto que se va a crear. */
+export interface Parecida {
+  id: number;
+  titulo: string;
+  /** Coseno entre ambos textos, redondeado a tres decimales. */
+  similitud: number;
+}
+
+/**
+ * Piso medido el 2026-11-22 con el modelo fijado sobre 215 entradas reales: tres paráfrasis dieron 0,876-0,951 con su
+ * original (en primer puesto las tres) y un tema vecino sin duplicado, 0,82 como máximo. Entradas solo relacionadas
+ * también lo superan: por eso es un aviso de «parecidas», no de «duplicadas».
+ */
+const SIMILITUD_PARECIDA = 0.85;
+const LIMITE_PARECIDAS = 3;
+const VECINOS_PARECIDAS = 20;
+
 /**
  * Almacén de la memoria sobre un único archivo SQLite: entradas, revisiones, relaciones,
  * FTS5 por triggers y la proyección vectorial en la misma transacción que la entrada.
@@ -459,6 +476,36 @@ export class MemoryStore {
       )
       .all(modelo) as { id: number }[];
     return filas.map((f) => f.id);
+  }
+
+  /**
+   * Hasta `LIMITE_PARECIDAS` entradas vigentes, de cualquier ámbito, cuyo coseno con este texto llega a
+   * `SIMILITUD_PARECIDA`. Es un aviso para quien crea, no un veredicto: el agente decide si ya está cubierta.
+   * Sin modelo devuelve null: no se comprobó, que no es lo mismo que no haber ninguna.
+   */
+  async parecidas(titulo: string, contenido: string, excluir: number[]): Promise<Parecida[] | null> {
+    const vector = await this.vectorizar(titulo, contenido);
+    if (!vector || !this.embedder) return null;
+    const { sql, params } = clausulaFiltros({}, this.ahora());
+    const filas = this.db
+      .prepare(
+        `WITH knn AS (SELECT rowid AS id, distance FROM entradas_vec WHERE embedding MATCH ? AND k = ?)
+         SELECT e.id, e.titulo, knn.distance FROM knn JOIN entradas e ON e.id = knn.id
+         JOIN vectores v ON v.entrada_id = e.id AND v.estado = 'ok' AND v.model_id = ?
+         WHERE ${sql} ORDER BY knn.distance`,
+      )
+      // Pide vecinos de sobra: el filtro de vigencia y las exclusiones se aplican después del KNN.
+      .all(vectorBlob(vector), VECINOS_PARECIDAS + excluir.length, this.embedder.modelId, ...params) as {
+      id: number;
+      titulo: string;
+      distance: number;
+    }[];
+    // Vectores normalizados: la distancia L2 de sqlite-vec da el coseno como 1 - d²/2.
+    return filas
+      .filter((f) => !excluir.includes(f.id))
+      .map((f) => ({ id: f.id, titulo: f.titulo, similitud: Math.round((1 - f.distance ** 2 / 2) * 1000) / 1000 }))
+      .filter((p) => p.similitud >= SIMILITUD_PARECIDA)
+      .slice(0, LIMITE_PARECIDAS);
   }
 
   /** Regenera los vectores faltantes o de otro modelo; devuelve cuántos escribió. */

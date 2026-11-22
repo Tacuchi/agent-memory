@@ -266,7 +266,11 @@ export class Api {
       contenido: contenido.texto,
       reemplaza_a: d.reemplaza_a ?? null,
     };
-    if (d.borrador) return { borrador: canonico, huella: huella(canonico), redactados };
+    const excluir = d.reemplaza_a ? [d.reemplaza_a] : [];
+    if (d.borrador) {
+      const parecidas = await this.store.parecidas(titulo.texto, contenido.texto, excluir);
+      return { borrador: canonico, huella: huella(canonico), redactados, parecidas };
+    }
     const confirmado = this.verificarHuella(d.huella, canonico);
     const r = await this.store.crear(
       {
@@ -280,7 +284,8 @@ export class Api {
       },
       { actor, confirmado },
     );
-    return { entrada: vistaEntrada(r.entrada), redactados };
+    const parecidas = await this.store.parecidas(titulo.texto, contenido.texto, [r.entrada.id, ...excluir]);
+    return { entrada: vistaEntrada(r.entrada), redactados, parecidas };
   }
 
   private async editar(d: z.infer<typeof ESQUEMAS.editar>, actor: Actor) {
